@@ -1,0 +1,26 @@
+@import './theme.css';
+
+/* Toolbar popup gets a fixed width; detached window mode flows naturally. */
+body {
+  width: 400px;
+  min-height: 500px;
+}
+
+html.mode-window body {
+  width: auto;
+  min-height: 100vh;
+}
+
+html.mode-window #root {
+  max-width: 480px;
+  margin-inline: auto;
+}
+
+/* Handing a signed-out popup off to the settings page: collapse and hide it so
+   nothing flashes before the popup closes. */
+html.redirecting body {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}

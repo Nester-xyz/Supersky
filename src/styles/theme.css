@@ -1,0 +1,365 @@
+@import 'tailwindcss';
+
+/*
+ * Nunito — a rounded geometric sans bundled for a consistent, friendly look on
+ * every OS (the closest open match to Apple's SF Pro Rounded, which can't be
+ * shipped). Variable weight 200–1000. File lives in public/fonts.
+ */
+@font-face {
+  font-family: 'Nunito Variable';
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url('/fonts/nunito-variable.woff2') format('woff2-variations');
+}
+
+/* Class-based dark mode: `.dark` on <html> wins over the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * SuperSky design tokens.
+ * Semantic names (canvas/surface/ink/line/accent) map to CSS variables that
+ * swap under `.dark`, so components rarely need dark: variants.
+ */
+@theme inline {
+  --color-canvas: var(--ss-canvas);
+  --color-surface: var(--ss-surface);
+  --color-surface-2: var(--ss-surface-2);
+  --color-surface-3: var(--ss-surface-3);
+  --color-line: var(--ss-line);
+  --color-line-strong: var(--ss-line-strong);
+  --color-ink: var(--ss-ink);
+  --color-ink-muted: var(--ss-ink-muted);
+  --color-ink-faint: var(--ss-ink-faint);
+  --color-accent: var(--ss-accent);
+  --color-accent-strong: var(--ss-accent-strong);
+  --color-accent-soft: var(--ss-accent-soft);
+  --color-danger: var(--ss-danger);
+  --color-danger-soft: var(--ss-danger-soft);
+  --color-success: var(--ss-success);
+  --color-success-soft: var(--ss-success-soft);
+  --color-warning: var(--ss-warning);
+  --color-spark: var(--ss-spark);
+
+  /*
+   * Nunito first so the rounded look is identical on every OS; ui-rounded /
+   * SF Pro Rounded give Apple devices the native rounded font if the bundled
+   * one ever fails to load; the rest is a system fallback.
+   */
+  --font-sans:
+    'Nunito Variable', ui-rounded, 'SF Pro Rounded', 'Segoe UI', system-ui, -apple-system,
+    Roboto, 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+}
+
+/*
+ * Deep-navy "night sky" brand palette. The logo tile runs #242b66 -> #0c1030;
+ * the dark theme's canvas and surfaces live in that same navy family so the
+ * mark sits natively, and the sparkle's indigo + cyan become the accents.
+ */
+:root {
+  --ss-canvas: #eef1fb;
+  --ss-surface: #ffffff;
+  --ss-surface-2: #e7ebf8;
+  --ss-surface-3: #dbe1f3;
+  --ss-line: #dce2f1;
+  --ss-line-strong: #c1cae4;
+  --ss-ink: #0b0f2b; /* logo's deep navy, doubling as primary text */
+  --ss-ink-muted: #46506f;
+  --ss-ink-faint: #6d769a;
+  --ss-accent: #2563eb;
+  --ss-accent-strong: #1d4fd0;
+  --ss-accent-soft: #e7effe;
+  --ss-primary-ink: #ffffff;
+  --ss-danger: #d22b46;
+  --ss-danger-soft: #fdecef;
+  --ss-success: #14804a;
+  --ss-success-soft: #e7f7ee;
+  --ss-warning: #b45309;
+  --ss-spark: #12a5c9;
+
+  /* Primary button — solid, follows the selected accent (default: Sky Blue). */
+  --ss-primary: #2f6bff;
+
+  --ss-shadow-card: 0 1px 2px rgb(12 16 48 / 0.06), 0 4px 16px -8px rgb(12 16 48 / 0.12);
+  --ss-shadow-pop: 0 4px 10px -2px rgb(12 16 48 / 0.14), 0 12px 32px -8px rgb(12 16 48 / 0.2);
+
+  color-scheme: light;
+}
+
+.dark {
+  --ss-canvas: #080b24; /* just below the logo's darkest, so the tile lifts off it */
+  --ss-surface: #10163c;
+  --ss-surface-2: #182052;
+  --ss-surface-3: #212a63; /* ~ the logo's top navy #242b66 */
+  --ss-line: #283167;
+  --ss-line-strong: #39437e;
+  --ss-ink: #eef1fe;
+  --ss-ink-muted: #aeb7d8;
+  --ss-ink-faint: #828cb4;
+  --ss-accent: #6ea8ff;
+  --ss-accent-strong: #8bbcff;
+  --ss-accent-soft: #16294d;
+  --ss-danger: #ff5f78;
+  --ss-danger-soft: #3b1626;
+  --ss-success: #34d38b;
+  --ss-success-soft: #10321f;
+  --ss-warning: #f4a83c;
+  --ss-spark: #45dcf3; /* bright cyan sparkle */
+
+  --ss-primary: #2f6bff;
+
+  --ss-shadow-card: 0 1px 2px rgb(0 0 0 / 0.45), 0 4px 16px -8px rgb(0 0 0 / 0.55);
+  --ss-shadow-pop: 0 4px 10px -2px rgb(0 0 0 / 0.55), 0 12px 32px -8px rgb(0 0 0 / 0.65);
+
+  color-scheme: dark;
+}
+
+/*
+ * Accent themes. Sky Blue is the default defined in :root/.dark above; each
+ * block below overrides only the accent tokens. Light values sit on
+ * [data-accent], dark values on .dark[data-accent] (both live on <html>).
+ */
+[data-accent='cyan'] {
+  --ss-accent: #0e8ba8;
+  --ss-accent-strong: #0b7490;
+  --ss-accent-soft: #e0f6fb;
+  --ss-primary: #0b90ad;
+  --ss-spark: #0891b2;
+}
+.dark[data-accent='cyan'] {
+  --ss-accent: #38d8f0;
+  --ss-accent-strong: #6fe6f7;
+  --ss-accent-soft: #10303a;
+  --ss-primary: #0b90ad;
+  --ss-spark: #7af0ff;
+}
+
+[data-accent='emerald'] {
+  --ss-accent: #059669;
+  --ss-accent-strong: #047857;
+  --ss-accent-soft: #e3f6ee;
+  --ss-primary: #0e9f6e;
+  --ss-spark: #14b8a6;
+}
+.dark[data-accent='emerald'] {
+  --ss-accent: #34d399;
+  --ss-accent-strong: #6ee7b7;
+  --ss-accent-soft: #0f2e24;
+  --ss-primary: #0e9f6e;
+  --ss-spark: #5eead4;
+}
+
+[data-accent='amber'] {
+  --ss-accent: #b7791f;
+  --ss-accent-strong: #92600f;
+  --ss-accent-soft: #fbf0dc;
+  --ss-primary: #f2a417;
+  --ss-primary-ink: #2a1c02;
+  --ss-spark: #ea9a0b;
+}
+.dark[data-accent='amber'] {
+  --ss-accent: #f7c65a;
+  --ss-accent-strong: #fbd784;
+  --ss-accent-soft: #33260a;
+  --ss-primary: #f2a417;
+  --ss-primary-ink: #2a1c02;
+  --ss-spark: #fcd34d;
+}
+
+[data-accent='violet'] {
+  --ss-accent: #7c3aed;
+  --ss-accent-strong: #6d28d9;
+  --ss-accent-soft: #f0e9fe;
+  --ss-primary: #7c3aed;
+  --ss-spark: #a855f7;
+}
+.dark[data-accent='violet'] {
+  --ss-accent: #b794ff;
+  --ss-accent-strong: #cbb2ff;
+  --ss-accent-soft: #241a4d;
+  --ss-primary: #7c3aed;
+  --ss-spark: #d8b4fe;
+}
+
+[data-accent='coral'] {
+  --ss-accent: #e11d48;
+  --ss-accent-strong: #be123c;
+  --ss-accent-soft: #fde7ec;
+  --ss-primary: #f43f5e;
+  --ss-spark: #fb7185;
+}
+.dark[data-accent='coral'] {
+  --ss-accent: #ff8a9b;
+  --ss-accent-strong: #ffb0bb;
+  --ss-accent-soft: #3a1622;
+  --ss-primary: #f43f5e;
+  --ss-spark: #fda4af;
+}
+
+body {
+  background: var(--ss-canvas);
+  color: var(--ss-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--ss-accent) 25%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ss-line-strong) transparent;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex h-9 select-none items-center justify-center gap-2 rounded-full px-4 text-sm font-medium transition-all duration-150 outline-none;
+  }
+  .btn:disabled {
+    @apply pointer-events-none opacity-50;
+  }
+  .btn:focus-visible {
+    box-shadow: 0 0 0 2px var(--ss-canvas), 0 0 0 4px var(--ss-accent);
+  }
+
+  .btn-primary {
+    color: var(--ss-primary-ink);
+    background-color: var(--ss-primary);
+    box-shadow: 0 1px 2px rgb(11 15 43 / 0.25);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.08);
+  }
+  .btn-primary:active {
+    transform: scale(0.97);
+  }
+
+  .btn-outline {
+    @apply border border-line-strong text-ink;
+    background: var(--ss-surface);
+  }
+  .btn-outline:hover {
+    background: var(--ss-surface-2);
+  }
+
+  .btn-ghost {
+    @apply text-ink-muted;
+  }
+  .btn-ghost:hover {
+    @apply bg-surface-2 text-ink;
+  }
+
+  .btn-danger-outline {
+    @apply border text-danger;
+    border-color: color-mix(in srgb, var(--ss-danger) 35%, transparent);
+  }
+  .btn-danger-outline:hover {
+    background: var(--ss-danger-soft);
+  }
+
+  .icon-btn {
+    @apply grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-ink-muted transition-colors duration-150 outline-none;
+  }
+  .icon-btn:hover {
+    @apply bg-surface-2 text-ink;
+  }
+  .icon-btn:focus-visible {
+    box-shadow: 0 0 0 2px var(--ss-accent);
+  }
+  .icon-btn:disabled {
+    @apply pointer-events-none opacity-40;
+  }
+
+  .input {
+    @apply h-10 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors duration-150 outline-none placeholder:text-ink-faint;
+  }
+  .input:focus {
+    border-color: var(--ss-accent);
+  }
+
+  .card {
+    @apply rounded-2xl border border-line bg-surface;
+    box-shadow: var(--ss-shadow-card);
+  }
+
+  .menu-pop {
+    @apply rounded-xl border border-line bg-surface p-1.5;
+    box-shadow: var(--ss-shadow-pop);
+  }
+
+  .menu-item {
+    @apply flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-ink transition-colors duration-100;
+  }
+  .menu-item:hover {
+    @apply bg-surface-2;
+  }
+}
+
+@keyframes ss-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-slide-up {
+  animation: ss-slide-up 180ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@keyframes ss-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-slide-down {
+  animation: ss-slide-down 180ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@keyframes ss-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: ss-fade-in 150ms ease-out;
+}
+
+@keyframes ss-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--ss-surface-2) 40%,
+    var(--ss-surface-3) 50%,
+    var(--ss-surface-2) 60%
+  );
+  background-size: 200% 100%;
+  animation: ss-shimmer 1.4s linear infinite;
+}
+
+/* Gradient brand text, used for the "Sky" in the wordmark. */
+.text-gradient {
+  background-image: linear-gradient(120deg, var(--ss-accent), var(--ss-spark));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

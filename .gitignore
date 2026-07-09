@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+.output/
+.wxt/
+stats.html
+stats-*.json
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Logs & OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+*.local
+.vscode/
+
+# AI tool configs
+.claude/
+.agents/
+
+# Test coverage
+coverage/
