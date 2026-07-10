@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { browser } from 'wxt/browser';
+import { EmojiPicker } from '@/components/EmojiPicker';
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -32,7 +33,13 @@ import { LANGUAGES } from '@/lib/languages';
 import { sendMessage } from '@/lib/messaging';
 import { loadSettings } from '@/lib/settings';
 import { takePendingShare } from '@/lib/share';
-import { MAX_GRAPHEMES, buildShareText, graphemeLength, truncateToGraphemes } from '@/lib/text';
+import {
+  MAX_GRAPHEMES,
+  buildShareText,
+  graphemeLength,
+  insertAtSelection,
+  truncateToGraphemes,
+} from '@/lib/text';
 import { domainOf, extractFirstUrl } from '@/lib/urls';
 import type { AccountSnapshot, LinkCardData } from '@/lib/types';
 
@@ -60,6 +67,7 @@ export function Composer({ account }: { account: AccountSnapshot }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dismissedUrlRef = useRef<string | null>(null);
   const requestedUrlRef = useRef<string | null>(null);
+  const selectionRef = useRef({ start: 0, end: 0 });
   const imagesRef = useRef(images);
   imagesRef.current = images;
 
@@ -104,6 +112,7 @@ export function Composer({ account }: { account: AccountSnapshot }) {
     if (!el) return;
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
+    selectionRef.current = { start: el.value.length, end: el.value.length };
   }, [booted]);
 
   // -- autosize textarea -----------------------------------------------------
@@ -220,6 +229,7 @@ export function Composer({ account }: { account: AccountSnapshot }) {
       images.forEach(releaseImage);
       setImages([]);
       setText('');
+      selectionRef.current = { start: 0, end: 0 };
       setCard(null);
       dismissedUrlRef.current = null;
       requestedUrlRef.current = null;
@@ -238,6 +248,31 @@ export function Composer({ account }: { account: AccountSnapshot }) {
       event.preventDefault();
       void publish();
     }
+  }
+
+  function rememberSelection() {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    selectionRef.current = {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    };
+  }
+
+  function insertEmoji(emoji: string) {
+    const textarea = textareaRef.current;
+    const result = insertAtSelection(
+      text,
+      emoji,
+      selectionRef.current.start,
+      selectionRef.current.end,
+    );
+    selectionRef.current = { start: result.caret, end: result.caret };
+    setText(result.text);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(result.caret, result.caret);
+    });
   }
 
   const showShareChip = currentTab !== null && text === '' && images.length === 0;
@@ -267,6 +302,7 @@ export function Composer({ account }: { account: AccountSnapshot }) {
             onChange={(e) => setText(e.target.value)}
             onPaste={handlePaste}
             onKeyDown={handleKeyDown}
+            onSelect={rememberSelection}
             placeholder={`What’s up, ${firstName}?`}
             rows={5}
             className="max-h-[280px] min-h-[150px] w-full resize-none bg-transparent pt-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
@@ -275,7 +311,13 @@ export function Composer({ account }: { account: AccountSnapshot }) {
           {showShareChip && (
             <button
               type="button"
-              onClick={() => setText(currentTab.url)}
+              onClick={() => {
+                setText(currentTab.url);
+                selectionRef.current = {
+                  start: currentTab.url.length,
+                  end: currentTab.url.length,
+                };
+              }}
               title={currentTab.url}
               className="mb-2 flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface-2 py-1 pr-3 pl-2 text-xs text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
             >
@@ -326,6 +368,8 @@ export function Composer({ account }: { account: AccountSnapshot }) {
         >
           <ImageIcon />
         </IconButton>
+
+        <EmojiPicker onOpen={rememberSelection} onSelect={insertEmoji} />
 
         <LanguagePicker value={lang} onChange={setLang} />
 

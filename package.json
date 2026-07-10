@@ -17,8 +17,6 @@
     "compile": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run",
-    "test:watch": "vitest",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
@@ -40,7 +38,6 @@
     "tailwindcss": "^4.1.7",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1",
-    "vitest": "^3.1.4",
     "wxt": "^0.20.6"
   }
 }

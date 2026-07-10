@@ -24,3 +24,13 @@ html.redirecting body {
   min-height: 0;
   background: transparent;
 }
+
+/* Keep color emoji native instead of inheriting Nunito's text glyph fallback. */
+.emoji-glyph {
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  line-height: 1;
+}
+
+.emoji-grid {
+  scrollbar-gutter: stable;
+}

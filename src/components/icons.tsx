@@ -46,6 +46,16 @@ export const ImageIcon = createIcon(
   </>,
 );
 
+export const SmileIcon = createIcon(
+  'SmileIcon',
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
+    <path d="M9 9h.01" />
+    <path d="M15 9h.01" />
+  </>,
+);
+
 export const GlobeIcon = createIcon(
   'GlobeIcon',
   <>

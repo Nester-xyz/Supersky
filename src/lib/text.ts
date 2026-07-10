@@ -16,6 +16,21 @@ export function graphemeLength(text: string): number {
   return count;
 }
 
+/** Insert text at a textarea's UTF-16 selection and return its next caret position. */
+export function insertAtSelection(
+  text: string,
+  insertion: string,
+  selectionStart: number,
+  selectionEnd: number,
+): { text: string; caret: number } {
+  const start = Math.max(0, Math.min(selectionStart, text.length));
+  const end = Math.max(start, Math.min(selectionEnd, text.length));
+  return {
+    text: `${text.slice(0, start)}${insertion}${text.slice(end)}`,
+    caret: start + insertion.length,
+  };
+}
+
 /** Trim text to a grapheme budget, appending an ellipsis when truncated. */
 export function truncateToGraphemes(text: string, max: number): string {
   if (max <= 0) return '';
