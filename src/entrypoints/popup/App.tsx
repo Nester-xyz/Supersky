@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { ExternalLinkIcon, LogOutIcon, SlidersIcon } from '@/components/icons';
+import { CheckIcon, LogOutIcon, SlidersIcon, UserRoundPlusIcon } from '@/components/icons';
 import { LogoMark, Wordmark } from '@/components/Logo';
 import { Avatar } from '@/components/ui';
-import { writeAuthCache } from '@/lib/auth-cache';
+import { readAuthSnapshot, writeAuthCache } from '@/lib/auth-cache';
 import { onAuthChanged, sendMessage } from '@/lib/messaging';
-import type { AccountSnapshot, AuthState } from '@/lib/types';
+import { MAX_ACCOUNTS, type AccountSnapshot, type AuthState } from '@/lib/types';
 import { Composer } from './Composer';
 
 type ViewState = 'loading' | AuthState;
 
 export default function App() {
-  const [view, setView] = useState<ViewState>('loading');
+  // Seed from the last-known account so the composer paints on the first frame
+  // instead of flashing blank while the background session is queried.
+  const [view, setView] = useState<ViewState>(() => readAuthSnapshot() ?? 'loading');
 
   useEffect(() => {
     let mounted = true;
@@ -30,13 +32,15 @@ export default function App() {
   // and close the popup.
   useEffect(() => {
     if (view === 'loading') return;
-    writeAuthCache(view.status === 'signed-in' ? 'in' : 'out');
+    writeAuthCache(view);
     if (view.status === 'signed-out') {
       void browser.runtime.openOptionsPage().finally(() => window.close());
     }
   }, [view]);
 
-  const account = view !== 'loading' && view.status === 'signed-in' ? view.account : null;
+  const signedIn = view !== 'loading' && view.status === 'signed-in' ? view : null;
+  const account = signedIn?.account ?? null;
+  const accounts = signedIn?.accounts ?? [];
 
   // Signed out (only reachable when the cache was stale) — render nothing
   // visible while the effect above opens settings and closes the popup.
@@ -51,34 +55,23 @@ export default function App() {
           <LogoMark size={26} />
           <Wordmark />
         </div>
-        {account && <AccountMenu account={account} />}
+        {account && <AccountSwitcher account={account} accounts={accounts} />}
       </header>
 
       <main className="flex flex-1 flex-col">
-        {view === 'loading' && <BootSkeleton />}
-        {account && <Composer account={account} />}
+        {account && <Composer account={account} accounts={accounts} />}
       </main>
     </div>
   );
 }
 
-function BootSkeleton() {
-  return (
-    <div className="space-y-3 p-4" aria-hidden="true">
-      <div className="flex gap-3">
-        <div className="size-9 shrink-0 rounded-full shimmer" />
-        <div className="flex-1 space-y-2 pt-1">
-          <div className="h-3.5 w-2/3 rounded-md shimmer" />
-          <div className="h-3.5 w-1/2 rounded-md shimmer" />
-        </div>
-      </div>
-      <div className="h-24 rounded-2xl shimmer" />
-      <div className="ml-auto h-9 w-24 rounded-full shimmer" />
-    </div>
-  );
-}
-
-function AccountMenu({ account }: { account: AccountSnapshot }) {
+function AccountSwitcher({
+  account,
+  accounts,
+}: {
+  account: AccountSnapshot;
+  accounts: AccountSnapshot[];
+}) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +91,20 @@ function AccountMenu({ account }: { account: AccountSnapshot }) {
     };
   }, [open]);
 
+  function switchTo(did: string) {
+    setOpen(false);
+    if (did === account.did) return;
+    // Storage-only swap; the auth broadcast repaints the whole popup.
+    void sendMessage('auth:switch', { did }).catch(() => undefined);
+  }
+
+  function openOptions() {
+    setOpen(false);
+    void browser.runtime.openOptionsPage();
+  }
+
+  const canAdd = accounts.length < MAX_ACCOUNTS;
+
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -112,47 +119,56 @@ function AccountMenu({ account }: { account: AccountSnapshot }) {
       </button>
 
       {open && (
-        <div className="menu-pop animate-slide-down absolute top-full right-0 z-50 mt-2 w-60">
-          <div className="flex items-center gap-2.5 px-3 py-2.5">
-            <Avatar src={account.avatar} name={account.displayName ?? account.handle} size={34} />
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold text-ink">
-                {account.displayName ?? account.handle}
-              </p>
-              <p className="truncate text-xs text-ink-muted">@{account.handle}</p>
-            </div>
-          </div>
+        <div className="menu-pop animate-slide-down absolute top-full right-0 z-50 mt-2 w-56">
+          {accounts.map((item) => {
+            const active = item.did === account.did;
+            return (
+              <button
+                key={item.did}
+                className="menu-item"
+                aria-current={active}
+                onClick={() => switchTo(item.did)}
+              >
+                <Avatar src={item.avatar} name={item.displayName ?? item.handle} size={26} />
+                <span className="min-w-0 flex-1 truncate text-[13px]">
+                  {item.displayName && (
+                    <span className="font-medium text-ink">{item.displayName} </span>
+                  )}
+                  <span className="text-ink-muted">@{item.handle}</span>
+                </span>
+                {active && <CheckIcon size={15} className="shrink-0 text-accent" />}
+              </button>
+            );
+          })}
+
+          {canAdd && (
+            <button className="menu-item" onClick={openOptions}>
+              <span className="grid size-[26px] shrink-0 place-items-center text-ink-muted">
+                <UserRoundPlusIcon size={16} />
+              </span>
+              <span className="flex-1 text-left text-[13px] text-ink-muted">Add account</span>
+            </button>
+          )}
+
           <div className="mx-1.5 my-1 border-t border-line" />
-          <a
-            className="menu-item"
-            href={`https://bsky.app/profile/${account.handle}`}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => setOpen(false)}
-          >
-            <ExternalLinkIcon size={15} className="text-ink-muted" />
-            Open Bluesky profile
-          </a>
-          <button
-            className="menu-item"
-            onClick={() => {
-              setOpen(false);
-              void browser.runtime.openOptionsPage();
-            }}
-          >
-            <SlidersIcon size={15} className="text-ink-muted" />
-            Settings
+
+          <button className="menu-item" onClick={openOptions}>
+            <span className="grid size-[26px] shrink-0 place-items-center text-ink-muted">
+              <SlidersIcon size={16} />
+            </span>
+            <span className="flex-1 text-left text-[13px]">Settings</span>
           </button>
-          <div className="mx-1.5 my-1 border-t border-line" />
           <button
             className="menu-item text-danger hover:bg-danger-soft"
             onClick={() => {
               setOpen(false);
-              void sendMessage('auth:logout', undefined).catch(() => undefined);
+              void sendMessage('auth:logout', { did: account.did }).catch(() => undefined);
             }}
           >
-            <LogOutIcon size={15} />
-            Sign out
+            <span className="grid size-[26px] shrink-0 place-items-center">
+              <LogOutIcon size={16} />
+            </span>
+            <span className="flex-1 text-left text-[13px]">Sign out</span>
           </button>
         </div>
       )}

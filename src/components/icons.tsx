@@ -132,6 +132,40 @@ export const ExternalLinkIcon = createIcon(
 
 export const ChevronDownIcon = createIcon('ChevronDownIcon', <path d="m6 9 6 6 6-6" />);
 
+export const ArrowRightIcon = createIcon(
+  'ArrowRightIcon',
+  <>
+    <path d="M5 12h14" />
+    <path d="m13 5 7 7-7 7" />
+  </>,
+);
+
+export const ChevronRightIcon = createIcon('ChevronRightIcon', <path d="m9 18 6-6-6-6" />);
+
+export const AtSignIcon = createIcon(
+  'AtSignIcon',
+  <>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+  </>,
+);
+
+export const LockIcon = createIcon(
+  'LockIcon',
+  <>
+    <rect x="3" y="11" width="18" height="11" rx="2.5" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </>,
+);
+
+export const PlusIcon = createIcon(
+  'PlusIcon',
+  <>
+    <path d="M12 5v14" />
+    <path d="M5 12h14" />
+  </>,
+);
+
 export const CheckIcon = createIcon('CheckIcon', <path d="M20 6 9 17l-5-5" />);
 
 export const AlertCircleIcon = createIcon(
@@ -183,6 +217,16 @@ export const UserIcon = createIcon(
   <>
     <circle cx="12" cy="8" r="4" />
     <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+  </>,
+);
+
+export const UserRoundPlusIcon = createIcon(
+  'UserRoundPlusIcon',
+  <>
+    <path d="M2 21a8 8 0 0 1 13.292-6" />
+    <circle cx="10" cy="8" r="5" />
+    <path d="M19 16v6" />
+    <path d="M22 19h-6" />
   </>,
 );
 

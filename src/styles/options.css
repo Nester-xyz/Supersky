@@ -1,5 +1,11 @@
 @import './theme.css';
 
+/* Always reserve the scrollbar: switching between short and tall tabs would
+   otherwise toggle it, shifting the centered layout and the floating dock. */
+html {
+  overflow-y: scroll;
+}
+
 body {
   min-height: 100vh;
 }

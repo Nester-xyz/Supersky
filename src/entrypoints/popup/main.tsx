@@ -1,14 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { browser } from 'wxt/browser';
-import { readAuthCache } from '@/lib/auth-cache';
+import { readAuthHint } from '@/lib/auth-cache';
 import { initPageTheme } from '@/lib/theme';
 import '@/styles/popup.css';
 import App from './App';
 
 const isWindowMode = new URLSearchParams(window.location.search).get('mode') === 'window';
 
-if (!isWindowMode && readAuthCache() !== 'in') {
+if (!isWindowMode && readAuthHint() !== 'in') {
   // Known (or presumed) signed out: open the settings page — which hosts the
   // sign-in form — and close the popup WITHOUT rendering anything, so there is
   // no flash of popup content. The async session check on the settings page

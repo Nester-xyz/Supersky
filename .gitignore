@@ -25,6 +25,7 @@ Thumbs.db
 # AI tool configs
 .claude/
 .agents/
+skills-lock.json
 
 # Test coverage
 coverage/

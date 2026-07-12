@@ -5,7 +5,16 @@
  * picker UI labels/swatches and the toolbar badge color (painted from JS, so
  * it can't read the CSS variables).
  */
-export type AccentId = 'sky' | 'cyan' | 'emerald' | 'amber' | 'violet' | 'coral';
+export type AccentId =
+  | 'sky'
+  | 'indigo'
+  | 'cyan'
+  | 'emerald'
+  | 'amber'
+  | 'sunset'
+  | 'coral'
+  | 'orchid'
+  | 'violet';
 
 export interface AccentMeta {
   id: AccentId;
@@ -19,11 +28,14 @@ export interface AccentMeta {
 
 export const ACCENTS: AccentMeta[] = [
   { id: 'sky', label: 'Sky Blue', from: '#2f6bff', to: '#45dcf3', badge: '#2f6bff' },
-  { id: 'cyan', label: 'Cyan', from: '#14b6d6', to: '#7af0ff', badge: '#0e97b5' },
-  { id: 'emerald', label: 'Emerald', from: '#10b981', to: '#5eead4', badge: '#0e9f6e' },
+  { id: 'indigo', label: 'Indigo', from: '#4f46e5', to: '#a5b4fc', badge: '#5558e3' },
+  { id: 'cyan', label: 'Cyan', from: '#14b6d6', to: '#67e8f9', badge: '#0e97b5' },
+  { id: 'emerald', label: 'Emerald', from: '#10b981', to: '#6ee7b7', badge: '#0e9f6e' },
   { id: 'amber', label: 'Amber', from: '#f2a417', to: '#fcd34d', badge: '#e08c0a' },
-  { id: 'violet', label: 'Violet', from: '#8b5cf6', to: '#d8b4fe', badge: '#7c3aed' },
-  { id: 'coral', label: 'Coral', from: '#f43f5e', to: '#fb9db0', badge: '#f43f5e' },
+  { id: 'sunset', label: 'Sunset', from: '#f97316', to: '#fdba74', badge: '#ed6a13' },
+  { id: 'coral', label: 'Coral', from: '#f43f5e', to: '#fda4af', badge: '#f43f5e' },
+  { id: 'orchid', label: 'Orchid', from: '#d946ef', to: '#f0abfc', badge: '#c936da' },
+  { id: 'violet', label: 'Violet', from: '#8b5cf6', to: '#c4b5fd', badge: '#7c3aed' },
 ];
 
 export const ACCENT_IDS: readonly AccentId[] = ACCENTS.map((a) => a.id);

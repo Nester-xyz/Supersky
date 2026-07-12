@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
@@ -27,12 +27,17 @@ export function Button({
   return (
     <button
       type={type}
-      className={cx('btn', BUTTON_VARIANTS[variant], className)}
+      className={cx('btn', BUTTON_VARIANTS[variant], loading && 'relative', className)}
       disabled={disabled || loading}
       {...rest}
     >
-      {loading && <Spinner size={14} />}
-      {children}
+      {loading && (
+        <span className="absolute inset-0 grid place-items-center">
+          <Spinner size={16} />
+        </span>
+      )}
+      {/* Kept mounted (just hidden) while loading so the button width doesn't jump. */}
+      <span className={cx('inline-flex items-center gap-2', loading && 'invisible')}>{children}</span>
     </button>
   );
 }
@@ -141,19 +146,74 @@ export function Field({
 
 const AVATAR_HUES = [230, 190, 260, 330, 160, 20];
 
-export function Avatar({ src, name, size = 36 }: { src?: string; name: string; size?: number }) {
-  if (src) {
+export function Avatar({
+  src,
+  name,
+  size = 36,
+  fallback = 'skeleton',
+}: {
+  src?: string;
+  name: string;
+  size?: number;
+  /**
+   * What to render while there is no image URL: `skeleton` (default) treats a
+   * missing src as still-loading account data and shimmers; `initial` renders
+   * the letter tile — use it where "no avatar" is a real final state (e.g.
+   * mention suggestions).
+   */
+  fallback?: 'skeleton' | 'initial';
+}) {
+  // `key` remounts (resetting the load state) whenever the source changes, e.g.
+  // when switching accounts.
+  if (src) return <AvatarImage key={src} src={src} name={name} size={size} />;
+  if (fallback === 'skeleton') {
     return (
+      <span
+        aria-hidden="true"
+        className="block shrink-0 rounded-full shimmer"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return <AvatarFallback name={name} size={size} />;
+}
+
+/**
+ * A remote avatar that shows a shimmer skeleton while the image loads, fades the
+ * image in once ready, and falls back to the initial-on-gradient tile on error.
+ */
+function AvatarImage({ src, name, size }: { src: string; name: string; size: number }) {
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+
+  if (status === 'error') return <AvatarFallback name={name} size={size} />;
+
+  return (
+    <span
+      className="relative block shrink-0 overflow-hidden rounded-full bg-surface-2"
+      style={{ width: size, height: size }}
+    >
+      {status === 'loading' && <span className="absolute inset-0 shimmer" aria-hidden="true" />}
       <img
         src={src}
         alt=""
         width={size}
         height={size}
-        className="shrink-0 rounded-full bg-surface-2 object-cover"
-        style={{ width: size, height: size }}
+        // Cached images can already be complete before onLoad attaches.
+        ref={(node) => {
+          if (node?.complete && node.naturalWidth > 0) setStatus('loaded');
+        }}
+        onLoad={() => setStatus('loaded')}
+        onError={() => setStatus('error')}
+        className={cx(
+          'h-full w-full rounded-full object-cover transition-opacity duration-200',
+          status === 'loaded' ? 'opacity-100' : 'opacity-0',
+        )}
       />
-    );
-  }
+    </span>
+  );
+}
+
+function AvatarFallback({ name, size }: { name: string; size: number }) {
   const hue = AVATAR_HUES[(name.codePointAt(0) ?? 0) % AVATAR_HUES.length] ?? 230;
   return (
     <div

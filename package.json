@@ -1,8 +1,8 @@
 {
   "name": "supersky",
-  "description": "SuperSky — a fast, beautiful Bluesky composer that lives in your toolbar.",
+  "description": "SuperSky, a fast, beautiful Bluesky composer that lives in your toolbar.",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@atproto/api": "^0.15.5",
+    "motion": "^12.42.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

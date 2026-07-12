@@ -118,7 +118,11 @@ export function EmojiPicker({
                 className="input h-9 rounded-lg pr-3 pl-9 text-[13px]"
               />
             </div>
-            <IconButton title="Close emoji picker" onClick={() => setOpen(false)}>
+            <IconButton
+              title="Close emoji picker"
+              onClick={() => setOpen(false)}
+              className="bg-surface-2 hover:bg-surface-3"
+            >
               <XIcon size={14} />
             </IconButton>
           </div>

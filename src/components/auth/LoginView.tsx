@@ -4,22 +4,21 @@ import { normalizeIdentifier } from '@/lib/identifier';
 import { MessagingError, sendMessage } from '@/lib/messaging';
 import { DEFAULT_SERVICE, loadSettings, saveSettings } from '@/lib/settings';
 import type { AccountSnapshot } from '@/lib/types';
-import { LogoMark } from '../Logo';
 import { Button, Field, cx } from '../ui';
 import {
   AlertCircleIcon,
+  AtSignIcon,
   ChevronDownIcon,
   EyeIcon,
   EyeOffIcon,
   InfoIcon,
+  LockIcon,
 } from '../icons';
 
 export function LoginView({
   onSignedIn,
-  showHero = true,
 }: {
   onSignedIn?: (account: AccountSnapshot) => void;
-  showHero?: boolean;
 }) {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -56,7 +55,7 @@ export function LoginView({
     } catch (err) {
       if (err instanceof MessagingError && err.code === ERROR_CODES.authFactorRequired) {
         setNeedsToken(true);
-        setError(token.trim() ? 'That code didn’t work — check your email for a fresh one.' : null);
+        setError(token.trim() ? 'That code didn’t work. Check your email for a fresh one.' : null);
       } else {
         setError(toErrorMessage(err));
       }
@@ -67,19 +66,6 @@ export function LoginView({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
-      {showHero && (
-        <div className="flex flex-col items-center pt-2 pb-1 text-center">
-          <LogoMark size={52} />
-          <h2 className="mt-3 text-lg font-semibold tracking-tight">
-            Welcome to Super
-            <span className="text-gradient">Sky</span>
-          </h2>
-          <p className="mt-1 text-[13px] text-ink-muted">
-            Sign in with your Bluesky account to start posting.
-          </p>
-        </div>
-      )}
-
       {error && (
         <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger-soft px-3 py-2.5 text-[13px] leading-snug text-danger">
           <AlertCircleIcon size={15} className="mt-0.5 shrink-0" />
@@ -91,7 +77,7 @@ export function LoginView({
         <>
           <div className="flex items-start gap-2 rounded-xl bg-accent-soft px-3 py-2.5 text-[13px] leading-snug text-ink">
             <InfoIcon size={15} className="mt-0.5 shrink-0 text-accent" />
-            <span>Bluesky emailed you a sign-in code — enter it below to continue.</span>
+            <span>Bluesky emailed you a sign-in code. Enter it below to continue.</span>
           </div>
           <Field label="Confirmation code">
             <input
@@ -108,15 +94,21 @@ export function LoginView({
       )}
 
       <Field label="Handle">
-        <input
-          className="input"
-          value={identifier}
-          onChange={(e) => setIdentifier(e.target.value)}
-          placeholder="yourname.bsky.social"
-          autoComplete="username"
-          spellCheck={false}
-          autoCapitalize="off"
-        />
+        <div className="relative">
+          <AtSignIcon
+            size={16}
+            className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-faint"
+          />
+          <input
+            className="input pl-10"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="yourname.bsky.social"
+            autoComplete="username"
+            spellCheck={false}
+            autoCapitalize="off"
+          />
+        </div>
       </Field>
 
       <Field
@@ -136,8 +128,12 @@ export function LoginView({
         }
       >
         <div className="relative">
+          <LockIcon
+            size={16}
+            className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-faint"
+          />
           <input
-            className="input pr-10"
+            className="input pr-10 pl-10"
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -188,7 +184,7 @@ export function LoginView({
         )}
       </div>
 
-      <Button type="submit" className="w-full" loading={submitting}>
+      <Button type="submit" className="h-11 w-full text-[15px]" loading={submitting}>
         {needsToken ? 'Verify & sign in' : 'Sign in'}
       </Button>
 

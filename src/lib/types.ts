@@ -10,7 +10,24 @@ export interface AccountSnapshot {
 
 export type AuthState =
   | { status: 'signed-out' }
-  | { status: 'signed-in'; account: AccountSnapshot };
+  | {
+      status: 'signed-in';
+      /** The account new posts are attributed to by default. */
+      account: AccountSnapshot;
+      /** Every account with a stored session, including the active one. */
+      accounts: AccountSnapshot[];
+    };
+
+/** How many accounts can be signed in at once (the first plus two more). */
+export const MAX_ACCOUNTS = 3;
+
+/** A person surfaced by @-mention typeahead in the composer. */
+export interface ActorSuggestion {
+  did: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+}
 
 export interface LoginRequest {
   identifier: string;
@@ -41,6 +58,11 @@ export interface PublishRequest {
   langs?: string[];
   images: ComposerImagePayload[];
   card: LinkCardData | null;
+  /**
+   * Accounts (by DID) to publish this draft as. Omitted or empty means the
+   * active account only; more than one fans the same draft out to each.
+   */
+  dids?: string[];
 }
 
 export interface PublishResult {
@@ -48,6 +70,8 @@ export interface PublishResult {
   cid: string;
   /** Canonical bsky.app URL of the new post. */
   webUrl: string;
+  /** Handle of the account this copy was posted as. */
+  handle: string;
 }
 
 /** Payload stashed by the background when the user shares via context menu. */

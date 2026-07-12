@@ -59,8 +59,8 @@ export async function prepareImage(file: File | Blob): Promise<PreparedImage> {
   throw new Error('Could not compress this image under Bluesky’s 1 MB limit.');
 }
 
-export function releaseImage(image: PreparedImage): void {
-  URL.revokeObjectURL(image.previewUrl);
+export function releaseImage(_image: PreparedImage): void {
+  // Data URLs don't need revocation; kept for API stability.
 }
 
 async function readDimensions(file: Blob): Promise<{ width: number; height: number }> {
@@ -95,7 +95,7 @@ async function toPrepared(
     alt: '',
     width,
     height,
-    previewUrl: URL.createObjectURL(blob),
+    previewUrl: dataUrl,
   };
 }
 

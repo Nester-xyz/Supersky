@@ -31,6 +31,21 @@ export function insertAtSelection(
   };
 }
 
+/** Replace a UTF-16 range within text and return the caret at the insertion's end. */
+export function replaceRange(
+  text: string,
+  start: number,
+  end: number,
+  insertion: string,
+): { text: string; caret: number } {
+  const from = Math.max(0, Math.min(start, text.length));
+  const to = Math.max(from, Math.min(end, text.length));
+  return {
+    text: `${text.slice(0, from)}${insertion}${text.slice(to)}`,
+    caret: from + insertion.length,
+  };
+}
+
 /** Trim text to a grapheme budget, appending an ellipsis when truncated. */
 export function truncateToGraphemes(text: string, max: number): string {
   if (max <= 0) return '';

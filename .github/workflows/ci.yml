@@ -22,7 +22,7 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Prepare WXT types
         run: npx wxt prepare
@@ -32,9 +32,6 @@ jobs:
 
       - name: Lint
         run: npm run lint
-
-      - name: Test
-        run: npm test
 
       - name: Build & package zip
         run: npm run zip

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { motion } from 'motion/react';
 import { browser } from 'wxt/browser';
 import { LoginView } from '@/components/auth/LoginView';
 import {
@@ -12,9 +13,11 @@ import {
   SparkleIcon,
   SunIcon,
   UserIcon,
+  UserRoundPlusIcon,
 } from '@/components/icons';
 import { LogoMark } from '@/components/Logo';
-import { Avatar, Button, Switch, cx } from '@/components/ui';
+import { Select } from '@/components/Select';
+import { Avatar, IconButton, Switch, cx } from '@/components/ui';
 import { ACCENTS } from '@/lib/accents';
 import { writeAuthCache } from '@/lib/auth-cache';
 import { onAuthChanged, sendMessage } from '@/lib/messaging';
@@ -27,7 +30,7 @@ import {
   type ThemePref,
 } from '@/lib/settings';
 import { LANGUAGES } from '@/lib/languages';
-import type { AuthState } from '@/lib/types';
+import { MAX_ACCOUNTS, type AuthState } from '@/lib/types';
 
 type TabId = 'account' | 'appearance' | 'posting' | 'about';
 
@@ -59,7 +62,7 @@ export default function App() {
   // Keep the popup's synchronous auth hint in sync from here too, so signing in
   // on this page lets the next popup open straight into the composer.
   useEffect(() => {
-    if (auth) writeAuthCache(auth.status === 'signed-in' ? 'in' : 'out');
+    if (auth) writeAuthCache(auth);
   }, [auth]);
 
   function update(patch: Partial<Settings>) {
@@ -69,8 +72,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <div className="mx-auto max-w-3xl px-6 pt-10 pb-16">
-        <header className="mb-8 flex items-center gap-3.5">
+      <div className="mx-auto max-w-3xl px-4 pt-8 pb-28 sm:px-6 sm:pt-10 sm:pb-16">
+        <header className="mb-6 flex items-center gap-3.5 sm:mb-8">
           <LogoMark size={44} />
           <h1 className="flex items-end gap-1.5 text-xl font-semibold leading-none tracking-tight text-ink">
             <span>
@@ -83,8 +86,8 @@ export default function App() {
           </h1>
         </header>
 
-        <div className="flex flex-col gap-6 sm:flex-row sm:gap-8">
-          <nav className="flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col">
+        <div className="sm:flex sm:gap-8">
+          <nav className="hidden shrink-0 sm:flex sm:w-44 sm:flex-col sm:gap-1">
             {TABS.map(({ id, label, icon }) => (
               <button
                 key={id}
@@ -104,13 +107,87 @@ export default function App() {
           </nav>
 
           <main className="min-w-0 flex-1">
-            {tab === 'account' && <AccountPanel auth={auth} />}
-            {tab === 'appearance' && <AppearancePanel settings={settings} update={update} />}
-            {tab === 'posting' && <PostingPanel settings={settings} update={update} />}
-            {tab === 'about' && <AboutPanel />}
+            <motion.div
+              key={tab}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              {tab === 'account' && <AccountPanel auth={auth} />}
+              {tab === 'appearance' && <AppearancePanel settings={settings} update={update} />}
+              {tab === 'posting' && <PostingPanel settings={settings} update={update} />}
+              {tab === 'about' && <AboutPanel />}
+            </motion.div>
           </main>
         </div>
       </div>
+
+      <MobileTabBar tab={tab} onChange={setTab} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mobile: a fixed bottom tab bar with a motion pill that slides to the active
+// tab. Hidden at sm+, where the vertical sidebar takes over.
+// ---------------------------------------------------------------------------
+
+const DOCK_SPRING = { type: 'spring', stiffness: 420, damping: 34 } as const;
+
+function MobileTabBar({ tab, onChange }: { tab: TabId; onChange: (id: TabId) => void }) {
+  return (
+    // Click-through strip; only the dock itself is interactive. The dock is a
+    // compact pill: inactive tabs are icons, the active one expands to show its
+    // label on a solid accent pill that slides between tabs.
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 sm:hidden">
+      <motion.nav
+        layout
+        transition={DOCK_SPRING}
+        aria-label="Settings sections"
+        className="pointer-events-auto flex items-center gap-1 rounded-full border border-line bg-surface/90 p-1.5 shadow-[var(--ss-shadow-pop)] backdrop-blur-xl"
+      >
+        {TABS.map(({ id, label, icon }) => {
+          const selected = tab === id;
+          return (
+            <motion.button
+              key={id}
+              layout
+              transition={DOCK_SPRING}
+              type="button"
+              onClick={() => onChange(id)}
+              title={label}
+              aria-label={label}
+              aria-current={selected ? 'page' : undefined}
+              style={selected ? { color: 'var(--ss-primary-ink)' } : undefined}
+              className={cx(
+                'relative flex h-10 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:shadow-[0_0_0_2px_var(--ss-accent)]',
+                selected ? 'gap-1.5 px-4' : 'w-10 text-ink-muted hover:text-ink',
+              )}
+            >
+              {selected && (
+                <motion.span
+                  layoutId="dock-pill"
+                  transition={DOCK_SPRING}
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full"
+                  style={{ backgroundColor: 'var(--ss-primary)' }}
+                />
+              )}
+              <span className="relative z-10">{icon}</span>
+              {selected && (
+                <motion.span
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.16, ease: 'easeOut' }}
+                  className="relative z-10 text-xs font-semibold whitespace-nowrap"
+                >
+                  {label}
+                </motion.span>
+              )}
+            </motion.button>
+          );
+        })}
+      </motion.nav>
     </div>
   );
 }
@@ -126,20 +203,26 @@ function Panel({ children }: { children: ReactNode }) {
 function Group({
   title,
   description,
+  action,
   children,
 }: {
   title?: string;
   description?: string;
+  /** Optional control rendered on the right edge of the section header. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="py-6 first:pt-0 last:pb-0">
       {title && (
-        <div className="mb-4">
-          <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
-          {description && (
-            <p className="mt-1 text-[13px] leading-snug text-ink-muted">{description}</p>
-          )}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+            {description && (
+              <p className="mt-1 text-[13px] leading-snug text-ink-muted">{description}</p>
+            )}
+          </div>
+          {action}
         </div>
       )}
       {children}
@@ -170,7 +253,8 @@ function SettingRow({
 // ---------------------------------------------------------------------------
 
 function AccountPanel({ auth }: { auth: AuthState | null }) {
-  const [signingOut, setSigningOut] = useState(false);
+  const [subView, setSubView] = useState<'list' | 'add'>('list');
+  const [busyDid, setBusyDid] = useState<string | null>(null);
 
   if (!auth) {
     return (
@@ -186,46 +270,108 @@ function AccountPanel({ auth }: { auth: AuthState | null }) {
 
   if (auth.status === 'signed-out') {
     return (
-      <div className="mx-auto max-w-sm pt-2 pb-4">
+      <div className="mx-auto max-w-sm pb-4 sm:mx-0">
+        <div className="mb-6 pt-2 text-center sm:pt-0 sm:text-left">
+          <h2 className="text-xl font-semibold tracking-tight text-ink sm:text-[15px]">Sign in</h2>
+          <p className="mt-1.5 text-[13px] leading-snug text-ink-muted sm:mt-1">
+            Connect your Bluesky account to start posting.
+          </p>
+        </div>
         <LoginView />
       </div>
     );
   }
 
-  const { account } = auth;
+  const { account, accounts } = auth;
+  // Active account first so it's easy to spot, then the rest in order.
+  const orderedAccounts = [account, ...accounts.filter((item) => item.did !== account.did)];
+
+  function signOut(did: string) {
+    setBusyDid(did);
+    void sendMessage('auth:logout', { did })
+      .catch(() => undefined)
+      .finally(() => setBusyDid(null));
+  }
+
+  if (subView === 'add') {
+    return (
+      <Panel>
+        <Group>
+          <div className="mx-auto max-w-sm pb-4 sm:mx-0">
+            <div className="mb-4 flex items-center gap-1.5 text-[15px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setSubView('list')}
+                className="text-ink-muted hover:text-ink transition-colors cursor-pointer"
+              >
+                Accounts
+              </button>
+              <span className="text-ink-faint">/</span>
+              <span className="text-ink">Add account</span>
+            </div>
+            <LoginView onSignedIn={() => setSubView('list')} />
+          </div>
+        </Group>
+      </Panel>
+    );
+  }
+
   return (
     <Panel>
-      <Group>
-        <div className="flex items-center gap-4">
-          <Avatar src={account.avatar} name={account.displayName ?? account.handle} size={56} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-semibold text-ink">
-              {account.displayName ?? account.handle}
-            </p>
-            <p className="truncate text-sm text-ink-muted">@{account.handle}</p>
-            <p className="mt-1.5 inline-flex rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-faint">
-              {new URL(account.service).host}
-            </p>
-          </div>
-          <Button
-            variant="danger-outline"
-            loading={signingOut}
-            onClick={() => {
-              setSigningOut(true);
-              void sendMessage('auth:logout', undefined).finally(() => setSigningOut(false));
-            }}
-          >
-            <LogOutIcon size={15} />
-            Sign out
-          </Button>
+      <Group
+        title="Accounts"
+        action={
+          accounts.length < MAX_ACCOUNTS ? (
+            <button
+              type="button"
+              onClick={() => setSubView('add')}
+              className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-accent-soft px-3.5 text-xs font-semibold text-accent transition-all hover:opacity-85 active:scale-95"
+            >
+              <UserRoundPlusIcon size={14} />
+              Add
+            </button>
+          ) : undefined
+        }
+      >
+        <div className="divide-y divide-line">
+          {orderedAccounts.map((item) => {
+            const active = item.did === account.did;
+            return (
+              <div key={item.did} className="flex items-center gap-3 py-3 first:pt-0">
+                <Avatar src={item.avatar} name={item.displayName ?? item.handle} size={38} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-[13px] font-semibold text-ink">
+                      {item.displayName ?? item.handle}
+                    </p>
+                    {active && (
+                      <span className="shrink-0 rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-xs text-ink-muted">
+                    @{item.handle}
+                    <span className="text-ink-faint"> · {new URL(item.service).host}</span>
+                  </p>
+                </div>
+                <IconButton
+                  title={`Sign out @${item.handle}`}
+                  className="size-7 text-ink-faint hover:bg-danger-soft hover:text-danger"
+                  disabled={busyDid === item.did}
+                  onClick={() => signOut(item.did)}
+                >
+                  <LogOutIcon size={14} />
+                </IconButton>
+              </div>
+            );
+          })}
         </div>
-      </Group>
 
-      <Group>
-        <div className="flex items-start gap-3">
+        <div className="mt-6 flex items-start gap-3 border-t border-line/50 pt-5">
           <InfoIcon size={16} className="mt-0.5 shrink-0 text-accent" />
           <p className="text-[13px] leading-relaxed text-ink-muted">
-            You’re signed in with an app password. Session tokens are stored only on this device and
+            You’re signed in with app passwords. Session tokens are stored only on this device and
             can be revoked anytime from{' '}
             <a
               className="font-medium text-accent hover:underline"
@@ -292,8 +438,10 @@ function AppearancePanel({
               onClick={() => update({ theme: value })}
               aria-pressed={settings.theme === value}
               className={cx(
-                'cursor-pointer rounded-2xl border-2 p-1.5 pb-2 transition-colors',
-                settings.theme === value ? 'border-accent' : 'border-line hover:border-line-strong',
+                'cursor-pointer rounded-2xl border p-1.5 pb-2 transition-colors',
+                settings.theme === value
+                  ? 'border-accent'
+                  : 'border-line hover:border-line-strong',
               )}
             >
               <div className="h-16 overflow-hidden rounded-xl border border-line">
@@ -324,7 +472,7 @@ function AppearancePanel({
                 onClick={() => update({ accent: a.id })}
                 aria-pressed={selected}
                 className={cx(
-                  'flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 transition-colors',
+                  'flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-all',
                   selected ? 'border-accent bg-accent-soft' : 'border-line hover:border-line-strong',
                 )}
               >
@@ -376,17 +524,14 @@ function PostingPanel({
           title="Default language"
           description="Tagged on new posts so readers can filter by language."
         >
-          <select
+          <Select
             value={settings.defaultLang}
-            onChange={(e) => update({ defaultLang: e.target.value })}
-            className="input h-9 w-44 cursor-pointer"
-          >
-            {LANGUAGES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            options={LANGUAGES}
+            onChange={(value) => update({ defaultLang: value })}
+            ariaLabel="Default post language"
+            align="end"
+            triggerClassName="h-9 w-44"
+          />
         </SettingRow>
       </Group>
       <Group>
@@ -415,6 +560,8 @@ const ABOUT_LINKS = [
 
 const FEATURES = [
   'One-click composer in your toolbar',
+  'Multiple accounts, one draft to many',
+  '@-mention autocomplete',
   'Share pages, links & quotes',
   'Images with alt text, link cards',
   'Unread notification badge',
@@ -424,16 +571,11 @@ function AboutPanel() {
   return (
     <Panel>
       <Group>
-        <div className="flex items-center gap-4">
-          <LogoMark size={52} />
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-ink">
-              Super
-              <span className="text-gradient">Sky</span>
-            </h2>
-            <p className="text-sm text-ink-muted">Post to Bluesky at the speed of light.</p>
-          </div>
-        </div>
+        <p className="text-sm font-medium text-ink">Post to Bluesky at the speed of light.</p>
+        <p className="mt-1 text-[13px] leading-snug text-ink-muted">
+          Everything happens right in your toolbar, and your drafts and sessions stay on this
+          device.
+        </p>
         <ul className="mt-5 grid gap-2.5 text-[13px] text-ink-muted sm:grid-cols-2">
           {FEATURES.map((feature) => (
             <li key={feature} className="flex items-center gap-2">
@@ -454,8 +596,8 @@ function AboutPanel() {
 
       <Group title="Roadmap">
         <p className="text-[13px] leading-relaxed text-ink-muted">
-          Threads, post scheduling, multi-account, and OAuth sign-in (once hosted client metadata is
-          set up) are planned. Follow along and suggest features anytime.
+          Threads, post scheduling, and OAuth sign-in (once hosted client metadata is set up) are
+          planned. Follow along and suggest features anytime.
         </p>
         <div className="mt-3.5 flex flex-wrap gap-2">
           {ABOUT_LINKS.map((link) => (

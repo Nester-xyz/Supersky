@@ -25,10 +25,10 @@ export default defineConfig({
         48: 'icon/48.png',
       },
     },
-    name: 'SuperSky — Bluesky Composer',
+    name: 'SuperSky: Bluesky Composer',
     short_name: 'SuperSky',
     description:
-      'Compose posts, share pages, and keep up with your Bluesky notifications — right from your toolbar.',
+      'Compose posts, share pages, and keep up with your Bluesky notifications right from your toolbar.',
     permissions: ['storage', 'alarms', 'contextMenus', 'activeTab'],
     host_permissions: ['https://cardyb.bsky.app/*'],
     commands: {

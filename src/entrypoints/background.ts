@@ -1,6 +1,7 @@
 import { browser, type Browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { badgeColor } from '@/lib/accents';
+import { searchActorsTypeahead } from '@/lib/atproto/actor';
 import { fetchLinkCard } from '@/lib/atproto/linkcard';
 import { publishPost } from '@/lib/atproto/post';
 import {
@@ -9,13 +10,14 @@ import {
   login,
   logout,
   requireAgent,
-  setOnProfileUpdated,
-  setOnSessionCleared,
+  requireAgentForDid,
+  setOnAuthChanged,
+  switchAccount,
 } from '@/lib/atproto/session';
 import { broadcastAuthChanged, registerHandlers } from '@/lib/messaging';
 import { loadSettings, watchSettings } from '@/lib/settings';
 import { setPendingShare } from '@/lib/share';
-import type { PendingShare } from '@/lib/types';
+import type { PendingShare, PublishRequest, PublishResult } from '@/lib/types';
 
 const BADGE_ALARM = 'supersky:badge';
 
@@ -27,37 +29,32 @@ const MENU_IDS = {
 
 export default defineBackground(() => {
   registerHandlers({
-    'auth:login': async (request) => {
-      const account = await login(request);
-      broadcastAuthChanged({ status: 'signed-in', account });
-      void updateBadge();
-      return account;
-    },
-    'auth:logout': async () => {
-      await logout();
-      broadcastAuthChanged({ status: 'signed-out' });
-      return null;
-    },
+    'auth:login': (request) => login(request),
+    'auth:logout': ({ did }) => logout(did),
+    'auth:switch': ({ did }) => switchAccount(did),
     'auth:get-state': () => getAuthState(),
     'card:fetch': ({ url }) => fetchLinkCard(url),
-    'post:publish': async (request) => publishPost(await requireAgent(), request),
+    'post:publish': (request) => publishToAccounts(request),
+    'actor:search-typeahead': async ({ query, limit }) =>
+      searchActorsTypeahead(await requireAgent(), query, limit),
     'badge:refresh': async () => {
       await updateBadge();
       return null;
     },
   });
 
-  setOnSessionCleared(() => {
-    broadcastAuthChanged({ status: 'signed-out' });
-    void paintBadge(0);
-  });
-  setOnProfileUpdated((account) => {
-    broadcastAuthChanged({ status: 'signed-in', account });
+  // A single hook: session.ts computes the fresh snapshot, we fan it out to any
+  // open page and reconcile the toolbar badge (which reads the active account).
+  setOnAuthChanged((state) => {
+    broadcastAuthChanged(state);
+    void updateBadge();
   });
 
-  browser.runtime.onInstalled.addListener(() => {
+  browser.runtime.onInstalled.addListener((details) => {
     void installContextMenus();
     void scheduleBadge();
+    // Greet fresh installs with the welcome tab (not on updates/reloads).
+    if (details.reason === 'install') void openWelcome();
   });
   browser.runtime.onStartup.addListener(() => {
     void scheduleBadge();
@@ -76,6 +73,34 @@ export default defineBackground(() => {
   // Also reconcile whenever the worker wakes up.
   void scheduleBadge();
 });
+
+// ---------------------------------------------------------------------------
+// Publishing — one draft to one or more accounts
+// ---------------------------------------------------------------------------
+
+/**
+ * Publish a draft as each requested account. Blobs are PDS-specific, so
+ * publishPost re-uploads images per account. Fails only if every copy fails;
+ * a partial success returns what landed so the composer can report the count.
+ */
+async function publishToAccounts(request: PublishRequest): Promise<PublishResult[]> {
+  const dids = request.dids?.length ? request.dids : null;
+  if (!dids) return [await publishPost(await requireAgent(), request)];
+
+  const results: PublishResult[] = [];
+  const errors: string[] = [];
+  for (const did of dids) {
+    try {
+      results.push(await publishPost(await requireAgentForDid(did), request));
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'Failed to post.');
+    }
+  }
+  if (results.length === 0) {
+    throw new Error(errors[0] ?? 'Could not post to any of the selected accounts.');
+  }
+  return results;
+}
 
 // ---------------------------------------------------------------------------
 // Context menus — share the page, a link, or selected text
@@ -120,6 +145,14 @@ async function handleMenuClick(
   }
   await setPendingShare(share);
   await openComposer();
+}
+
+async function openWelcome(): Promise<void> {
+  try {
+    await browser.tabs.create({ url: browser.runtime.getURL('/welcome.html') });
+  } catch {
+    // Tab creation can lose a startup race; the toolbar popup still works.
+  }
 }
 
 async function openComposer(): Promise<void> {

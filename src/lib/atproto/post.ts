@@ -41,7 +41,7 @@ export async function publishPost(agent: AtpAgent, request: PublishRequest): Pro
   });
 
   const actor = agent.session?.handle ?? agent.session?.did ?? '';
-  return { uri: response.uri, cid: response.cid, webUrl: postWebUrl(actor, response.uri) };
+  return { uri: response.uri, cid: response.cid, webUrl: postWebUrl(actor, response.uri), handle: actor };
 }
 
 async function buildImagesEmbed(

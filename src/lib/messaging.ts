@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { errorCode, toErrorMessage } from './errors';
 import type {
   AccountSnapshot,
+  ActorSuggestion,
   AuthState,
   LinkCardData,
   LoginRequest,
@@ -16,10 +17,12 @@ import type {
  */
 export interface MessageContracts {
   'auth:login': { input: LoginRequest; output: AccountSnapshot };
-  'auth:logout': { input: undefined; output: null };
+  'auth:logout': { input: { did?: string }; output: AuthState };
+  'auth:switch': { input: { did: string }; output: AuthState };
   'auth:get-state': { input: undefined; output: AuthState };
   'card:fetch': { input: { url: string }; output: LinkCardData | null };
-  'post:publish': { input: PublishRequest; output: PublishResult };
+  'post:publish': { input: PublishRequest; output: PublishResult[] };
+  'actor:search-typeahead': { input: { query: string; limit?: number }; output: ActorSuggestion[] };
   'badge:refresh': { input: undefined; output: null };
 }
 
