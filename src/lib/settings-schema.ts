@@ -12,6 +12,8 @@ export interface Settings {
   autoLinkCard: boolean;
   /** Show the unread-notifications count on the toolbar icon. */
   showBadge: boolean;
+  /** Pop a desktop banner when the active account gets new notifications. */
+  showBanners: boolean;
   /** Default PDS for new sign-ins. */
   service: string;
 }
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultLang: 'en',
   autoLinkCard: true,
   showBadge: true,
+  showBanners: true,
   service: DEFAULT_SERVICE,
 };
 
@@ -39,6 +42,8 @@ export function normalizeSettings(value: unknown): Settings {
     autoLinkCard:
       typeof raw.autoLinkCard === 'boolean' ? raw.autoLinkCard : DEFAULT_SETTINGS.autoLinkCard,
     showBadge: typeof raw.showBadge === 'boolean' ? raw.showBadge : DEFAULT_SETTINGS.showBadge,
+    showBanners:
+      typeof raw.showBanners === 'boolean' ? raw.showBanners : DEFAULT_SETTINGS.showBanners,
     service: isValidServiceUrl(raw.service) ? (raw.service as string) : DEFAULT_SETTINGS.service,
   };
 }

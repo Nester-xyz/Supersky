@@ -20,6 +20,9 @@ export default function App() {
     sendMessage('auth:get-state', undefined)
       .then((state) => mounted && setView(state))
       .catch(() => mounted && setView({ status: 'signed-out' }));
+    // Opening the popup is a natural moment to reconcile the toolbar badge —
+    // fire-and-forget so a slow network never delays the composer.
+    void sendMessage('notif:refresh', undefined).catch(() => undefined);
     const unsubscribe = onAuthChanged((state) => setView(state));
     return () => {
       mounted = false;

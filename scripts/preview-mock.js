@@ -182,7 +182,12 @@
           }),
         );
       }
-      case 'badge:refresh':
+      case 'notif:refresh':
+        await delay(250);
+        return respond({ count: 3 });
+      case 'notif:status':
+        return respond({ permission: 'granted' });
+      case 'notif:test':
         return respond(null);
       default:
         return { ok: false, error: `Unhandled message: ${message.type}` };

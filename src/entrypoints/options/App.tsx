@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { browser } from 'wxt/browser';
 import { LoginView } from '@/components/auth/LoginView';
 import {
+  AlertCircleIcon,
+  BellIcon,
   CheckIcon,
   ExternalLinkIcon,
   GlobeIcon,
@@ -17,7 +19,7 @@ import {
 } from '@/components/icons';
 import { LogoMark } from '@/components/Logo';
 import { Select } from '@/components/Select';
-import { Avatar, IconButton, Switch, cx } from '@/components/ui';
+import { Avatar, Button, IconButton, Switch, cx } from '@/components/ui';
 import { ACCENTS } from '@/lib/accents';
 import { writeAuthCache } from '@/lib/auth-cache';
 import { onAuthChanged, sendMessage } from '@/lib/messaging';
@@ -32,11 +34,12 @@ import {
 import { LANGUAGES } from '@/lib/languages';
 import { MAX_ACCOUNTS, type AuthState } from '@/lib/types';
 
-type TabId = 'account' | 'appearance' | 'posting' | 'about';
+type TabId = 'account' | 'appearance' | 'notifications' | 'posting' | 'about';
 
 const TABS: Array<{ id: TabId; label: string; icon: ReactNode }> = [
   { id: 'account', label: 'Account', icon: <UserIcon size={16} /> },
   { id: 'appearance', label: 'Appearance', icon: <SunIcon size={16} /> },
+  { id: 'notifications', label: 'Notifications', icon: <BellIcon size={16} /> },
   { id: 'posting', label: 'Posting', icon: <GlobeIcon size={16} /> },
   { id: 'about', label: 'About', icon: <InfoIcon size={16} /> },
 ];
@@ -115,6 +118,9 @@ export default function App() {
             >
               {tab === 'account' && <AccountPanel auth={auth} />}
               {tab === 'appearance' && <AppearancePanel settings={settings} update={update} />}
+              {tab === 'notifications' && (
+                <NotificationsPanel settings={settings} update={update} />
+              )}
               {tab === 'posting' && <PostingPanel settings={settings} update={update} />}
               {tab === 'about' && <AboutPanel />}
             </motion.div>
@@ -492,17 +498,100 @@ function AppearancePanel({
         </div>
       </Group>
 
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function NotificationsPanel({
+  settings,
+  update,
+}: {
+  settings: Settings;
+  update: (patch: Partial<Settings>) => void;
+}) {
+  const [permission, setPermission] = useState<'granted' | 'denied' | 'unknown'>('unknown');
+  const [tested, setTested] = useState(false);
+
+  useEffect(() => {
+    sendMessage('notif:status', undefined)
+      .then((status) => setPermission(status.permission))
+      .catch(() => undefined);
+  }, []);
+
+  function sendTest() {
+    void sendMessage('notif:test', undefined)
+      .then(async () => {
+        setTested(true);
+        // Re-check afterwards: a blocked test is the moment to surface why.
+        const status = await sendMessage('notif:status', undefined);
+        setPermission(status.permission);
+      })
+      .catch(() => undefined);
+  }
+
+  return (
+    <Panel>
       <Group>
-        <SettingRow
-          title="Notification badge"
-          description="Show your unread Bluesky notification count on the toolbar icon."
-        >
-          <Switch
-            checked={settings.showBadge}
-            onChange={(v) => update({ showBadge: v })}
-            label="Notification badge"
-          />
-        </SettingRow>
+        <div className="space-y-5">
+          <SettingRow
+            title="Notification badge"
+            description="Show your unread Bluesky notification count on the toolbar icon."
+          >
+            <Switch
+              checked={settings.showBadge}
+              onChange={(v) => update({ showBadge: v })}
+              label="Notification badge"
+            />
+          </SettingRow>
+          <SettingRow
+            title="Notification banners"
+            description="Pop up a desktop banner when your active account gets new likes, replies, mentions, reposts, and follows."
+          >
+            <Switch
+              checked={settings.showBanners}
+              onChange={(v) => update({ showBanners: v })}
+              label="Notification banners"
+            />
+          </SettingRow>
+        </div>
+      </Group>
+
+      {permission === 'denied' && (
+        <Group>
+          <div className="flex items-start gap-3">
+            <AlertCircleIcon size={16} className="mt-0.5 shrink-0 text-danger" />
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              Chrome is currently blocking SuperSky’s banners. Re-enable them under{' '}
+              <span className="font-medium text-ink">chrome://settings/content/notifications</span>{' '}
+              (or via “Turn off notifications” on any Chrome banner), then send another test.
+            </p>
+          </div>
+        </Group>
+      )}
+
+      <Group title="Not seeing banners?">
+        <p className="text-[13px] leading-relaxed text-ink-muted">
+          Banners only announce activity that happens <em>after</em> they’re switched on — your
+          existing backlog stays quiet. New activity is checked about every 15 seconds. Fire a test
+          to confirm banners reach your screen:
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button variant="outline" className="h-9 gap-1.5 px-4 text-[13px]" onClick={sendTest}>
+            <BellIcon size={14} /> Send a test banner
+          </Button>
+          {tested && (
+            <span className="text-xs text-ink-faint">Sent — check the corner of your screen.</span>
+          )}
+        </div>
+        {tested && (
+          <p className="mt-3.5 text-[13px] leading-relaxed text-ink-muted">
+            Didn’t see it? Your system may be muting Chrome — on Windows check Settings → System →
+            Notifications (and Do Not Disturb); on macOS check System Settings → Notifications →
+            Chrome.
+          </p>
+        )}
       </Group>
     </Panel>
   );
@@ -564,7 +653,7 @@ const FEATURES = [
   '@-mention autocomplete',
   'Share pages, links & quotes',
   'Images with alt text, link cards',
-  'Unread notification badge',
+  'Notification badge & banner alerts',
 ];
 
 function AboutPanel() {

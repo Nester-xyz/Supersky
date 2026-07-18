@@ -29,7 +29,7 @@ export default defineConfig({
     short_name: 'SuperSky',
     description:
       'Compose posts, share pages, and keep up with your Bluesky notifications right from your toolbar.',
-    permissions: ['storage', 'alarms', 'contextMenus', 'activeTab'],
+    permissions: ['storage', 'alarms', 'contextMenus', 'activeTab', 'notifications'],
     host_permissions: ['https://cardyb.bsky.app/*'],
     commands: {
       _execute_action: {

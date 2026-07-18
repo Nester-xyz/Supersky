@@ -235,3 +235,11 @@ export const SparkleIcon = createIcon(
   <path d="M12 2.5c.8 5 3.9 8.1 9 9-5.1.9-8.2 4-9 9-.8-5-3.9-8.1-9-9 5.1-.9 8.2-4 9-9Z" />,
   true,
 );
+
+export const BellIcon = createIcon(
+  'BellIcon',
+  <>
+    <path d="M18 8a6 6 0 0 0-12 0c0 4.2-1.3 5.6-2.6 7a1 1 0 0 0 .74 1.7h15.72a1 1 0 0 0 .74-1.7C19.3 13.6 18 12.2 18 8Z" />
+    <path d="M10.3 20.6a2 2 0 0 0 3.4 0" />
+  </>,
+);

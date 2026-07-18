@@ -23,7 +23,12 @@ export interface MessageContracts {
   'card:fetch': { input: { url: string }; output: LinkCardData | null };
   'post:publish': { input: PublishRequest; output: PublishResult[] };
   'actor:search-typeahead': { input: { query: string; limit?: number }; output: ActorSuggestion[] };
-  'badge:refresh': { input: undefined; output: null };
+  /** Poll now and report the unread count (null when signed out/unknown). */
+  'notif:refresh': { input: undefined; output: { count: number | null } };
+  /** Chrome-level banner permission; 'unknown' where the API is unsupported. */
+  'notif:status': { input: undefined; output: { permission: 'granted' | 'denied' | 'unknown' } };
+  /** Fire a sample banner so the user can verify OS-level delivery. */
+  'notif:test': { input: undefined; output: null };
 }
 
 export type MessageType = keyof MessageContracts;
