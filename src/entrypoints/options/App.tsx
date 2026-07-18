@@ -562,11 +562,23 @@ function NotificationsPanel({
         <Group>
           <div className="flex items-start gap-3">
             <AlertCircleIcon size={16} className="mt-0.5 shrink-0 text-danger" />
-            <p className="text-[13px] leading-relaxed text-ink-muted">
-              Chrome is currently blocking SuperSky’s banners. Re-enable them under{' '}
-              <span className="font-medium text-ink">chrome://settings/content/notifications</span>{' '}
-              (or via “Turn off notifications” on any Chrome banner), then send another test.
-            </p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] leading-relaxed text-ink-muted">
+                Your browser is currently blocking SuperSky’s banners. Allow them in its
+                notification settings, then send another test.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3 h-9 gap-1.5 px-4 text-[13px]"
+                onClick={() => {
+                  void browser.tabs
+                    .create({ url: 'chrome://settings/content/notifications' })
+                    .catch(() => undefined);
+                }}
+              >
+                <ExternalLinkIcon size={13} /> Open browser notification settings
+              </Button>
+            </div>
           </div>
         </Group>
       )}
@@ -586,16 +598,40 @@ function NotificationsPanel({
           )}
         </div>
         {tested && (
-          <p className="mt-3.5 text-[13px] leading-relaxed text-ink-muted">
-            Didn’t see it? Your system may be muting Chrome — on Windows check Settings → System →
-            Notifications (and Do Not Disturb); on macOS check System Settings → Notifications →
-            Chrome.
-          </p>
+          <div className="mt-4">
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              Didn’t see it? Your system may be muting the browser — make sure its notifications
+              are allowed and Do Not Disturb is off.
+            </p>
+            {OS_NOTIFICATION_SETTINGS && (
+              <Button
+                variant="outline"
+                className="mt-3 h-9 gap-1.5 px-4 text-[13px]"
+                onClick={() => {
+                  // Deep link into the OS Settings app; the browser asks for
+                  // confirmation and the page stays put.
+                  window.location.href = OS_NOTIFICATION_SETTINGS.url;
+                }}
+              >
+                <ExternalLinkIcon size={13} /> {OS_NOTIFICATION_SETTINGS.label}
+              </Button>
+            )}
+          </div>
         )}
       </Group>
     </Panel>
   );
 }
+
+/** Deep link to the OS notification settings, where one exists. */
+const OS_NOTIFICATION_SETTINGS = navigator.userAgent.includes('Windows')
+  ? { label: 'Open Windows notification settings', url: 'ms-settings:notifications' }
+  : navigator.userAgent.includes('Mac OS')
+    ? {
+        label: 'Open macOS notification settings',
+        url: 'x-apple.systempreferences:com.apple.preference.notifications',
+      }
+    : null;
 
 // ---------------------------------------------------------------------------
 

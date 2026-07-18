@@ -30,7 +30,9 @@ export default defineConfig({
     description:
       'Compose posts, share pages, and keep up with your Bluesky notifications right from your toolbar.',
     permissions: ['storage', 'alarms', 'contextMenus', 'activeTab', 'notifications'],
-    host_permissions: ['https://cardyb.bsky.app/*'],
+    // cardyb: link-card previews; cdn: author avatars inlined into toasts
+    // (the CDN sends no CORS headers, so plain fetch needs the host grant).
+    host_permissions: ['https://cardyb.bsky.app/*', 'https://cdn.bsky.app/*'],
     commands: {
       _execute_action: {
         suggested_key: { default: 'Ctrl+Shift+S', mac: 'Command+Shift+S' },

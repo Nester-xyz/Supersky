@@ -325,6 +325,7 @@ async function announceNew(agent: AtpAgent, count: number): Promise<void> {
       iconUrl: browser.runtime.getURL('/icon/128.png'),
       title: `${fresh.length} new notifications`,
       message: `${authorName(first)} ${reasonPhrase(first)} and ${fresh.length - 1} more`,
+      ...branding(),
     });
     return;
   }
@@ -365,12 +366,45 @@ async function createToast(did: string, item: NotificationView): Promise<void> {
   // Replies, quotes, and mentions carry the author's post text — surface it.
   const record = item.record as { text?: unknown } | undefined;
   const text = typeof record?.text === 'string' ? record.text : '';
+  const avatar = await fetchIconDataUrl(item.author.avatar);
   await browser.notifications.create(toastUrl(did, item), {
     type: 'basic',
-    iconUrl: browser.runtime.getURL('/icon/128.png'),
+    iconUrl: avatar ?? browser.runtime.getURL('/icon/128.png'),
     title: `${authorName(item)} ${reasonPhrase(item)}`,
     message: text.length > 140 ? `${text.slice(0, 139)}…` : text,
+    ...branding(),
   });
+}
+
+/**
+ * Label the toast body as SuperSky's — the OS header only ever credits the
+ * browser. Firefox rejects the property, so it's added everywhere else.
+ */
+function branding(): { contextMessage?: string } {
+  return import.meta.env.BROWSER === 'firefox' ? {} : { contextMessage: 'SuperSky' };
+}
+
+/**
+ * Inline a remote avatar as a data: URL — notification icons can't reference
+ * the web directly. Returns null on any failure so callers fall back to the
+ * extension icon.
+ */
+async function fetchIconDataUrl(url: string | undefined): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return `data:${blob.type || 'image/jpeg'};base64,${btoa(binary)}`;
+  } catch {
+    return null;
+  }
 }
 
 async function clearToasts(): Promise<void> {
@@ -402,6 +436,7 @@ async function sendTestToast(): Promise<null> {
     iconUrl: browser.runtime.getURL('/icon/128.png'),
     title: 'SuperSky banners are working',
     message: 'New likes, replies, mentions, and follows will pop up like this.',
+    ...branding(),
   });
   return null;
 }
