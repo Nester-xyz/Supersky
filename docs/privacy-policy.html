@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Supersky Privacy Policy</title>
+<meta name="description" content="Privacy policy for Supersky, a Bluesky companion extension for your browser." />
+<style>
+  :root{
+    --navy-top:#242b66; --navy-bot:#0c1030; --accent:#2f6bff; --spark:#45dcf3;
+    --ink:#0b0f2b; --ink-muted:#46506f; --ink-faint:#6d769a; --line:#e3e8f4;
+    --canvas:#f4f6fd; --surface:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--canvas); color:var(--ink);
+    font-family:'Nunito',ui-rounded,'SF Pro Rounded','Segoe UI',system-ui,-apple-system,Roboto,'Helvetica Neue',Arial,sans-serif;
+    line-height:1.65; font-size:16.5px;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:0 22px 90px}
+  header.hero{
+    background:radial-gradient(120% 140% at 85% -20%, rgba(69,220,243,.18) 0%, rgba(69,220,243,0) 45%),
+      linear-gradient(135deg,var(--navy-top),var(--navy-bot));
+    color:#fff; padding:54px 22px 46px; text-align:center;
+  }
+  .hero-inner{max-width:760px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:18px}
+  .mark{width:76px;height:76px;filter:drop-shadow(0 14px 26px rgba(4,7,30,.5))}
+  h1{margin:0;font-size:34px;font-weight:900;letter-spacing:-.02em}
+  h1 .sky{background:linear-gradient(120deg,var(--accent),var(--spark));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{margin:0;color:rgba(214,223,255,.82);font-weight:600;font-size:16px}
+  .updated{margin-top:6px;font-size:13.5px;color:rgba(190,201,240,.75);font-weight:600}
+  main{background:var(--surface);margin-top:-26px;border-radius:20px;box-shadow:0 24px 60px -30px rgba(6,10,40,.5);padding:14px 40px 40px;border:1px solid var(--line)}
+  h2{font-size:20px;font-weight:800;letter-spacing:-.01em;margin:34px 0 10px;padding-top:12px}
+  h2:first-of-type{margin-top:20px}
+  p{margin:12px 0}
+  ul{margin:12px 0;padding-left:22px}
+  li{margin:7px 0}
+  a{color:var(--accent);font-weight:700;text-decoration:none}
+  a:hover{text-decoration:underline}
+  strong{font-weight:800}
+  .callout{background:var(--canvas);border:1px solid var(--line);border-radius:14px;padding:16px 20px;margin:20px 0}
+  .callout p:first-child{margin-top:0}.callout p:last-child{margin-bottom:0}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-weight:800;color:var(--ink);background:var(--canvas)}
+  td:first-child{font-weight:700;white-space:nowrap;color:var(--ink)}
+  code{background:var(--canvas);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  footer{max-width:760px;margin:26px auto 0;padding:0 22px;text-align:center;color:var(--ink-faint);font-size:13.5px}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-inner">
+    <svg class="mark" viewBox="0 0 128 128" aria-hidden="true">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#242b66"/><stop offset="1" stop-color="#0c1030"/></linearGradient></defs>
+      <rect width="128" height="128" rx="30" fill="url(#lg)"/>
+      <path d="M64 24 C 67.3 46 82 60.7 104 64 C 82 67.3 67.3 82 64 104 C 60.7 82 46 67.3 24 64 C 46 60.7 60.7 46 64 24 Z" fill="#fff"/>
+    </svg>
+    <h1>Super<span class="sky">sky</span> Privacy Policy</h1>
+    <p class="tag">Your corner of the sky, one click away.</p>
+    <p class="updated">Last updated: July 18, 2026</p>
+  </div>
+</header>
+
+<div class="wrap">
+<main>
+
+<p>Supersky is a browser extension that lets you post to <a href="https://bsky.app" target="_blank" rel="noreferrer">Bluesky</a>, share pages, and keep up with your notifications from your browser toolbar. This page explains what data the extension handles and where that data goes.</p>
+
+<div class="callout">
+  <p><strong>The short version:</strong> Supersky has no servers, no analytics, and no tracking. Your credentials, drafts, and settings stay in your browser. Data only ever travels to Bluesky's own services (your Personal Data Server, plus Bluesky's link preview and image services), and only when you ask the extension to do something, like publish a post.</p>
+</div>
+
+<h2>Who this policy covers</h2>
+<p>This policy covers the Supersky browser extension as distributed through the Chrome Web Store and similar extension stores. It does not cover Bluesky itself or any Personal Data Server (PDS) you connect to. Those services have their own policies; for how Bluesky handles the content you publish, see the <a href="https://bsky.social/about/support/privacy-policy" target="_blank" rel="noreferrer">Bluesky Privacy Policy</a>.</p>
+
+<h2>Data the extension handles</h2>
+<p>Supersky handles the data below to do its job, nothing more. Unless a row says otherwise, the data is stored locally in your browser with the extension storage API. None of it is sent to us. There is no server on our side to send it to.</p>
+
+<table>
+  <thead><tr><th>Data</th><th>Why it's handled</th><th>Where it's stored / sent</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Bluesky login &amp; authentication information</td>
+      <td>You sign in with your Bluesky handle and an <strong>app password</strong>. The app password goes to your Personal Data Server to create a session, and the session tokens it returns are used to post and read notifications on your behalf.</td>
+      <td>Sent to your PDS (default <code>bsky.social</code>) to authenticate. Session tokens are stored locally in your browser only.</td>
+    </tr>
+    <tr>
+      <td>Account profile (handle, DID, display name, avatar)</td>
+      <td>Shown in the composer and account switcher so you always know which account you are posting as.</td>
+      <td>Fetched from your PDS; a snapshot is cached locally in your browser.</td>
+    </tr>
+    <tr>
+      <td>Post content you create (text, images, alt text, language)</td>
+      <td>This is the post you choose to publish. It is uploaded to Bluesky when you press <em>Post</em>.</td>
+      <td>Sent to your PDS to publish. Unsent drafts are saved locally in your browser and cleared once posted.</td>
+    </tr>
+    <tr>
+      <td>Current page information (URL, title, selected text)</td>
+      <td>When you use a share action or open the composer, the extension reads the active tab so it can pre-fill your post and build a link preview.</td>
+      <td>Read from the active tab only when you trigger it, and included in a post only if you publish it. Never logged or tracked.</td>
+    </tr>
+    <tr>
+      <td>Link URLs (for previews)</td>
+      <td>To show a rich link card, the first URL in your draft is sent to Bluesky's card service.</td>
+      <td>Sent to <code>cardyb.bsky.app</code> (a Bluesky service) to generate the preview.</td>
+    </tr>
+    <tr>
+      <td>Extension settings</td>
+      <td>Theme, accent color, default post language, and notification preferences.</td>
+      <td>Stored locally in your browser only.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Who your data is shared with</h2>
+<p>We do not sell, rent, or share your data with anyone for advertising, analytics, or anything else. Your data only travels to the Bluesky services needed for the action you asked for:</p>
+<ul>
+  <li><strong>Your Personal Data Server (PDS):</strong> <code>bsky.social</code> by default, or another server if you enter one. Used to sign in, publish posts, and read your notifications and profile.</li>
+  <li><strong><code>cardyb.bsky.app</code>:</strong> Bluesky's link card service. It fetches the title, description, and thumbnail for links you include in a post.</li>
+  <li><strong><code>cdn.bsky.app</code>:</strong> Bluesky's content delivery network. It serves the author avatars shown inside desktop notification banners.</li>
+</ul>
+<p>These interactions fall under Bluesky's own terms and privacy policy. Supersky runs no backend, receives none of your data, and loads no third-party code.</p>
+
+<h2>What we do not do</h2>
+<ul>
+  <li>No analytics, telemetry, tracking pixels, or fingerprinting.</li>
+  <li>No ads and no sale of data.</li>
+  <li>No collection of your browsing history. The extension reads a page only when you invoke a share action or open the composer.</li>
+  <li>Nothing is ever sent to the developer. There is no server on our side.</li>
+</ul>
+
+<h2>Where your data lives and how long it stays</h2>
+<p>Session tokens, drafts, cached profiles, and settings live in your browser via the extension storage API. They stay there until you sign out, clear them, or uninstall:</p>
+<ul>
+  <li><strong>Signing out</strong> of an account removes its session tokens and cached profile from your browser, and asks your PDS to revoke the session.</li>
+  <li><strong>Uninstalling</strong> the extension removes all locally stored data.</li>
+  <li>You can also cut off Supersky's access at any time from your <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noreferrer">Bluesky app password settings</a>, with or without the extension installed.</li>
+</ul>
+
+<h2>Permissions</h2>
+<p>Supersky requests only what its features need: <code>storage</code> (save settings, drafts, and sessions locally), <code>alarms</code> (check your unread notification count in the background), <code>contextMenus</code> (the right-click "Share on Bluesky" items), <code>activeTab</code> (read the current page's URL and title when you share it), <code>notifications</code> (desktop banners for new activity), and host access to <code>cardyb.bsky.app</code> and <code>cdn.bsky.app</code> (Bluesky's link preview and image services). There is no blanket access to the pages you visit; the extension only touches a page at the moment you share it.</p>
+
+<h2>Children's privacy</h2>
+<p>Supersky is not aimed at children under 13 (or the minimum age of digital consent where you live) and does not knowingly collect their data. Bluesky account eligibility is governed by Bluesky's own terms.</p>
+
+<h2>Changes to this policy</h2>
+<p>If this policy changes, the "Last updated" date above will change with it, and meaningful changes will be noted in the extension's release notes.</p>
+
+<h2>Contact</h2>
+<p>Questions about this policy or your data? Email <a href="mailto:bhandariankit2075@gmail.com">bhandariankit2075@gmail.com</a>. The source code is public at <a href="https://github.com/Nester-xyz/Supersky" target="_blank" rel="noreferrer">github.com/Nester-xyz/Supersky</a>.</p>
+
+</main>
+</div>
+<footer>
+  Supersky is an independent, open-source project. It is not affiliated with or endorsed by Bluesky Social PBC.
+</footer>
+</body>
+</html>
