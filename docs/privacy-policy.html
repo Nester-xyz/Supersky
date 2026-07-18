@@ -41,10 +41,36 @@
   strong{font-weight:800}
   .callout{background:var(--canvas);border:1px solid var(--line);border-radius:14px;padding:16px 20px;margin:20px 0}
   .callout p:first-child{margin-top:0}.callout p:last-child{margin-bottom:0}
-  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px}
-  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{font-weight:800;color:var(--ink);background:var(--canvas)}
-  td:first-child{font-weight:700;white-space:nowrap;color:var(--ink)}
+  .table-wrap{margin:20px 0;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14.5px}
+  th,td{text-align:left;padding:13px 16px;vertical-align:top}
+  thead th{
+    font-weight:800;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--ink-muted);background:var(--canvas);border-bottom:1px solid var(--line);
+  }
+  tbody td{color:var(--ink-muted);line-height:1.55}
+  tbody tr + tr td{border-top:1px solid var(--line)}
+  tbody td:first-child{font-weight:800;color:var(--ink)}
+  tbody tr:nth-child(even) td{background:#fafbfe}
+
+  @media (max-width:640px){
+    .table-wrap{border:0;border-radius:0;overflow:visible}
+    table,tbody,tr,td{display:block;width:100%}
+    thead{display:none}
+    tbody tr{
+      border:1px solid var(--line);border-radius:14px;
+      margin-bottom:12px;padding:4px 0;background:var(--surface);
+    }
+    tbody tr:nth-child(even) td{background:transparent}
+    tbody tr + tr td{border-top:0}
+    td{padding:8px 16px}
+    tbody td:first-child{font-size:15.5px;padding-top:12px}
+    tbody td:not(:first-child)::before{
+      content:attr(data-label);display:block;
+      font-size:11.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+      color:var(--ink-faint);margin-bottom:4px;
+    }
+  }
   code{background:var(--canvas);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   footer{max-width:760px;margin:26px auto 0;padding:0 22px;text-align:center;color:var(--ink-faint);font-size:13.5px}
 </style>
@@ -78,41 +104,44 @@
 <h2>Data the extension handles</h2>
 <p>Supersky handles the data below to do its job, nothing more. Unless a row says otherwise, the data is stored locally in your browser with the extension storage API. None of it is sent to us. There is no server on our side to send it to.</p>
 
+<div class="table-wrap">
 <table>
+  <colgroup><col style="width:26%" /><col style="width:42%" /><col style="width:32%" /></colgroup>
   <thead><tr><th>Data</th><th>Why it's handled</th><th>Where it's stored / sent</th></tr></thead>
   <tbody>
     <tr>
       <td>Bluesky login &amp; authentication information</td>
-      <td>You sign in with your Bluesky handle and an <strong>app password</strong>. The app password goes to your Personal Data Server to create a session, and the session tokens it returns are used to post and read notifications on your behalf.</td>
-      <td>Sent to your PDS (default <code>bsky.social</code>) to authenticate. Session tokens are stored locally in your browser only.</td>
+      <td data-label="Why it's handled">You sign in with your Bluesky handle and an <strong>app password</strong>. The app password goes to your Personal Data Server to create a session, and the session tokens it returns are used to post and read notifications on your behalf.</td>
+      <td data-label="Where it's stored / sent">Sent to your PDS (default <code>bsky.social</code>) to authenticate. Session tokens are stored locally in your browser only.</td>
     </tr>
     <tr>
       <td>Account profile (handle, DID, display name, avatar)</td>
-      <td>Shown in the composer and account switcher so you always know which account you are posting as.</td>
-      <td>Fetched from your PDS; a snapshot is cached locally in your browser.</td>
+      <td data-label="Why it's handled">Shown in the composer and account switcher so you always know which account you are posting as.</td>
+      <td data-label="Where it's stored / sent">Fetched from your PDS; a snapshot is cached locally in your browser.</td>
     </tr>
     <tr>
       <td>Post content you create (text, images, alt text, language)</td>
-      <td>This is the post you choose to publish. It is uploaded to Bluesky when you press <em>Post</em>.</td>
-      <td>Sent to your PDS to publish. Unsent drafts are saved locally in your browser and cleared once posted.</td>
+      <td data-label="Why it's handled">This is the post you choose to publish. It is uploaded to Bluesky when you press <em>Post</em>.</td>
+      <td data-label="Where it's stored / sent">Sent to your PDS to publish. Unsent drafts are saved locally in your browser and cleared once posted.</td>
     </tr>
     <tr>
       <td>Current page information (URL, title, selected text)</td>
-      <td>When you use a share action or open the composer, the extension reads the active tab so it can pre-fill your post and build a link preview.</td>
-      <td>Read from the active tab only when you trigger it, and included in a post only if you publish it. Never logged or tracked.</td>
+      <td data-label="Why it's handled">When you use a share action or open the composer, the extension reads the active tab so it can pre-fill your post and build a link preview.</td>
+      <td data-label="Where it's stored / sent">Read from the active tab only when you trigger it, and included in a post only if you publish it. Never logged or tracked.</td>
     </tr>
     <tr>
       <td>Link URLs (for previews)</td>
-      <td>To show a rich link card, the first URL in your draft is sent to Bluesky's card service.</td>
-      <td>Sent to <code>cardyb.bsky.app</code> (a Bluesky service) to generate the preview.</td>
+      <td data-label="Why it's handled">To show a rich link card, the first URL in your draft is sent to Bluesky's card service.</td>
+      <td data-label="Where it's stored / sent">Sent to <code>cardyb.bsky.app</code> (a Bluesky service) to generate the preview.</td>
     </tr>
     <tr>
       <td>Extension settings</td>
-      <td>Theme, accent color, default post language, and notification preferences.</td>
-      <td>Stored locally in your browser only.</td>
+      <td data-label="Why it's handled">Theme, accent color, default post language, and notification preferences.</td>
+      <td data-label="Where it's stored / sent">Stored locally in your browser only.</td>
     </tr>
   </tbody>
 </table>
+</div>
 
 <h2>Who your data is shared with</h2>
 <p>We do not sell, rent, or share your data with anyone for advertising, analytics, or anything else. Your data only travels to the Bluesky services needed for the action you asked for:</p>
