@@ -1,6 +1,6 @@
 import { ACCENT_IDS, DEFAULT_ACCENT, type AccentId } from './accents';
 
-export type ThemePref = 'system' | 'light' | 'dark';
+export type ThemePref = 'system' | 'light' | 'dark' | 'slate';
 
 export interface Settings {
   theme: ThemePref;
@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   service: DEFAULT_SERVICE,
 };
 
-const THEMES: readonly ThemePref[] = ['system', 'light', 'dark'];
+export const THEMES: readonly ThemePref[] = ['system', 'light', 'dark', 'slate'];
 
 /** Defensive merge of possibly-stale stored data into a valid Settings object. */
 export function normalizeSettings(value: unknown): Settings {

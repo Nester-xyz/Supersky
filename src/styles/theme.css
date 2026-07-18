@@ -115,6 +115,28 @@
 }
 
 /*
+ * Slate: a dimmer dark. Same structure, but the canvas lifts well off black and
+ * the navy is desaturated toward blue-grey, which is easier on the eyes for long
+ * sessions. It rides on top of .dark and overrides only the neutrals, so every
+ * .dark[data-accent] block below still applies untouched.
+ */
+.dark.slate {
+  --ss-canvas: #1a1f2e;
+  --ss-surface: #222839;
+  --ss-surface-2: #2c3346;
+  --ss-surface-3: #363d52;
+  --ss-line: #363d51;
+  --ss-line-strong: #4a5268;
+  --ss-ink: #eaedf5;
+  --ss-ink-muted: #aab2c6;
+  --ss-ink-faint: #828b9f;
+
+  /* Lighter canvas needs less crushing shadow than the near-black dark theme. */
+  --ss-shadow-card: 0 1px 2px rgb(0 0 0 / 0.32), 0 4px 16px -8px rgb(0 0 0 / 0.42);
+  --ss-shadow-pop: 0 4px 10px -2px rgb(0 0 0 / 0.42), 0 12px 32px -8px rgb(0 0 0 / 0.52);
+}
+
+/*
  * Accent themes. Sky Blue is the default defined in :root/.dark above; each
  * block below overrides only the accent tokens. Light values sit on
  * [data-accent], dark values on .dark[data-accent] (both live on <html>).

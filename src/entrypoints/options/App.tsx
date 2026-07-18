@@ -6,6 +6,7 @@ import {
   AlertCircleIcon,
   BellIcon,
   CheckIcon,
+  ContrastIcon,
   ExternalLinkIcon,
   GlobeIcon,
   InfoIcon,
@@ -401,6 +402,7 @@ const THEME_OPTIONS: Array<{ value: ThemePref; label: string; icon: ReactNode }>
   { value: 'system', label: 'System', icon: <MonitorIcon size={15} /> },
   { value: 'light', label: 'Light', icon: <SunIcon size={15} /> },
   { value: 'dark', label: 'Dark', icon: <MoonIcon size={15} /> },
+  { value: 'slate', label: 'Slate', icon: <ContrastIcon size={15} /> },
 ];
 
 function ThemeSwatch({ value }: { value: ThemePref }) {
@@ -418,6 +420,14 @@ function ThemeSwatch({ value }: { value: ThemePref }) {
   );
   if (value === 'light') return light;
   if (value === 'dark') return dark;
+  if (value === 'slate') {
+    return (
+      <div className="h-full w-full bg-[#1a1f2e] p-2">
+        <div className="h-2 w-3/5 rounded-sm bg-[#eaedf5]/85" />
+        <div className="mt-1.5 h-6 rounded-md border border-[#363d51] bg-[#222839]" />
+      </div>
+    );
+  }
   return (
     <div className="flex h-full w-full">
       <div className="w-1/2 overflow-hidden">{light}</div>
@@ -436,7 +446,7 @@ function AppearancePanel({
   return (
     <Panel>
       <Group title="Theme" description="How Supersky looks in the popup and settings.">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {THEME_OPTIONS.map(({ value, label, icon }) => (
             <button
               key={value}

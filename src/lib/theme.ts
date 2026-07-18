@@ -1,11 +1,11 @@
 import { DEFAULT_ACCENT, ACCENT_IDS, type AccentId } from './accents';
 import { loadSettings, watchSettings } from './settings';
-import type { ThemePref } from './settings-schema';
+import { THEMES, type ThemePref } from './settings-schema';
 
 const THEME_CACHE = 'supersky:theme-cache';
 const ACCENT_CACHE = 'supersky:accent-cache';
 
-export function resolveTheme(pref: ThemePref, systemDark: boolean): 'light' | 'dark' {
+export function resolveTheme(pref: ThemePref, systemDark: boolean): 'light' | 'dark' | 'slate' {
   if (pref === 'system') return systemDark ? 'dark' : 'light';
   return pref;
 }
@@ -31,8 +31,13 @@ function readCache(key: string): string | null {
 }
 
 function applyTheme(pref: ThemePref): void {
-  const dark = resolveTheme(pref, systemPrefersDark()) === 'dark';
-  document.documentElement.classList.toggle('dark', dark);
+  const resolved = resolveTheme(pref, systemPrefersDark());
+  // Slate is a dark theme with softer, desaturated surfaces, so it keeps the
+  // `dark` class (and with it every dark accent block) and layers `slate` on
+  // top to override only the neutrals.
+  const root = document.documentElement;
+  root.classList.toggle('dark', resolved !== 'light');
+  root.classList.toggle('slate', resolved === 'slate');
   writeCache(THEME_CACHE, pref);
 }
 
@@ -49,8 +54,9 @@ function applyAccent(accent: AccentId): void {
 export function initPageTheme(): void {
   const cachedTheme = readCache(THEME_CACHE);
   const cachedAccent = readCache(ACCENT_CACHE);
-  let currentPref: ThemePref =
-    cachedTheme === 'light' || cachedTheme === 'dark' ? cachedTheme : 'system';
+  let currentPref: ThemePref = THEMES.includes(cachedTheme as ThemePref)
+    ? (cachedTheme as ThemePref)
+    : 'system';
   applyTheme(currentPref);
   applyAccent(ACCENT_IDS.includes(cachedAccent as AccentId) ? (cachedAccent as AccentId) : DEFAULT_ACCENT);
 
