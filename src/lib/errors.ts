@@ -33,7 +33,7 @@ export function friendlyAuthError(err: unknown): string {
   const code = errorCode(err);
   const status = httpStatus(err);
   if (code === ERROR_CODES.rateLimited) {
-    return 'Too many attempts — Bluesky rate-limited this device. Try again in a few minutes.';
+    return 'Too many attempts, so Bluesky rate-limited this device. Try again in a few minutes.';
   }
   if (status === 401 || /invalid identifier or password/i.test(toErrorMessage(err))) {
     return 'Invalid handle or app password. Double-check both and try again.';

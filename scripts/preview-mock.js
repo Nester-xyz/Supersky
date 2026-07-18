@@ -1,4 +1,4 @@
-// Mock of the chrome.* extension APIs used by SuperSky's pages, so the real
+// Mock of the chrome.* extension APIs used by Supersky's pages, so the real
 // built bundles can render in a plain browser tab for design iteration.
 // Never shipped: only injected by scripts/preview-server.mjs.
 //
@@ -164,7 +164,7 @@
           url: payload.url,
           title: 'A Field Guide to the Night Sky',
           description:
-            'Comets, constellations, and why we keep looking up — a long-form guide to reading the sky like a map.',
+            'Comets, constellations, and why we keep looking up: a long-form guide to reading the sky like a map.',
           imageUrl: CARD_IMAGE,
         });
       case 'post:publish': {
@@ -228,7 +228,7 @@
     },
     tabs: {
       query: async () => [
-        { url: 'https://example.com/night-sky-guide', title: 'A Field Guide to the Night Sky — Example' },
+        { url: 'https://example.com/night-sky-guide', title: 'A Field Guide to the Night Sky | Example' },
       ],
     },
     action: {

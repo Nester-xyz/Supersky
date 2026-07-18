@@ -25,8 +25,8 @@ export default defineConfig({
         48: 'icon/48.png',
       },
     },
-    name: 'SuperSky: Bluesky Composer',
-    short_name: 'SuperSky',
+    name: 'Supersky: Bluesky Composer',
+    short_name: 'Supersky',
     description:
       'Compose posts, share pages, and keep up with your Bluesky notifications right from your toolbar.',
     permissions: ['storage', 'alarms', 'contextMenus', 'activeTab', 'notifications'],
@@ -36,7 +36,7 @@ export default defineConfig({
     commands: {
       _execute_action: {
         suggested_key: { default: 'Ctrl+Shift+S', mac: 'Command+Shift+S' },
-        description: 'Open the SuperSky composer',
+        description: 'Open the Supersky composer',
       },
     },
   },

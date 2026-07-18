@@ -1,5 +1,5 @@
 /**
- * The accent themes SuperSky ships. Each id maps to a set of CSS token
+ * The accent themes Supersky ships. Each id maps to a set of CSS token
  * overrides in styles/theme.css (keyed by [data-accent="id"] for light and
  * .dark[data-accent="id"] for dark). This file is the source of truth for the
  * picker UI labels/swatches and the toolbar badge color (painted from JS, so
@@ -22,7 +22,7 @@ export interface AccentMeta {
   /** Swatch gradient endpoints for the picker chip. */
   from: string;
   to: string;
-  /** Toolbar badge background — a mid tone legible with white text. */
+  /** Toolbar badge background: a mid tone legible with white text. */
   badge: string;
 }
 

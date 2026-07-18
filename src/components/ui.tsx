@@ -158,7 +158,7 @@ export function Avatar({
   /**
    * What to render while there is no image URL: `skeleton` (default) treats a
    * missing src as still-loading account data and shimmers; `initial` renders
-   * the letter tile — use it where "no avatar" is a real final state (e.g.
+   * the letter tile; use it where "no avatar" is a real final state (e.g.
    * mention suggestions).
    */
   fallback?: 'skeleton' | 'initial';

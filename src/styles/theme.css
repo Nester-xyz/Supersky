@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /*
- * Nunito — a rounded geometric sans bundled for a consistent, friendly look on
+ * Nunito, a rounded geometric sans bundled for a consistent, friendly look on
  * every OS (the closest open match to Apple's SF Pro Rounded, which can't be
  * shipped). Variable weight 200–1000. File lives in public/fonts.
  */
@@ -17,7 +17,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * SuperSky design tokens.
+ * Supersky design tokens.
  * Semantic names (canvas/surface/ink/line/accent) map to CSS variables that
  * swap under `.dark`, so components rarely need dark: variants.
  */
@@ -77,7 +77,7 @@
   --ss-warning: #b45309;
   --ss-spark: #12a5c9;
 
-  /* Primary button — solid, follows the selected accent (default: Sky Blue). */
+  /* Primary button: solid, follows the selected accent (default: Sky Blue). */
   --ss-primary: #2f6bff;
 
   --ss-shadow-card: 0 1px 2px rgb(12 16 48 / 0.06), 0 4px 16px -8px rgb(12 16 48 / 0.12);

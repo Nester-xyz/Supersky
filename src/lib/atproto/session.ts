@@ -22,7 +22,7 @@ type AccountsMap = Record<string, StoredAccount>;
 /**
  * Agents live as long as the service worker does; storage.local is the source
  * of truth across worker restarts. One agent per signed-in DID, resumed lazily.
- * Credentials never leave the device — only the session tokens issued by each
+ * Credentials never leave the device; only the session tokens issued by each
  * user's own PDS are stored.
  */
 const agents = new Map<string, Promise<AtpAgent | null>>();
@@ -67,7 +67,7 @@ function createAgent(service: string): AtpAgent {
           await writeStore(accounts, activeDid ?? session.did);
         }).then(emitChange);
       } else if ((event === 'expired' || event === 'create-failed') && session?.did) {
-        // Tokens are dead beyond refresh — drop just this identity.
+        // Tokens are dead beyond refresh, so drop just this identity.
         void removeAccount(session.did);
       }
       // 'network-error' keeps the stored session; it may still be valid.
@@ -212,7 +212,7 @@ async function resumeAccount(did: string): Promise<AtpAgent | null> {
   } catch (err) {
     const status = httpStatus(err);
     if (status === 400 || status === 401) {
-      // Tokens were revoked or expired beyond refresh — sign this one out cleanly.
+      // Tokens were revoked or expired beyond refresh, so sign this one out cleanly.
       await removeAccount(did);
       return null;
     }
@@ -239,7 +239,7 @@ export async function getAuthState(): Promise<AuthState> {
   return stored;
 }
 
-/** Build the signed-in/out snapshot from storage alone — no network. */
+/** Build the signed-in/out snapshot from storage alone, with no network. */
 export async function buildStoredAuthState(): Promise<AuthState> {
   const { accounts, activeDid } = await readStore();
   const list = Object.values(accounts).map((entry) => entry.profile);

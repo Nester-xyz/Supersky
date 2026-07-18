@@ -1,6 +1,6 @@
 /**
- * A synchronous mirror of the auth state in localStorage, so the popup can —
- * before rendering anything — decide whether to show the composer or hand off
+ * A synchronous mirror of the auth state in localStorage, so the popup can
+ * decide, before rendering anything, whether to show the composer or hand off
  * to the settings page, AND paint the composer instantly from the last-known
  * account instead of waiting on the background session. The background remains
  * the source of truth; this is only a fast hint, reconciled on every open.

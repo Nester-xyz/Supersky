@@ -81,7 +81,7 @@ export default function App() {
           <h1 className="flex items-end gap-1.5 text-xl font-semibold leading-none tracking-tight text-ink">
             <span>
               Super
-              <span className="text-gradient">Sky</span>
+              <span className="text-gradient">sky</span>
             </span>
             <span className="mb-0.5 rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-ink-muted">
               v{browser.runtime.getManifest().version}
@@ -199,7 +199,7 @@ function MobileTabBar({ tab, onChange }: { tab: TabId; onChange: (id: TabId) => 
 }
 
 // ---------------------------------------------------------------------------
-// Flat layout primitives — sections separated by hairlines, no card boxes.
+// Flat layout primitives: sections separated by hairlines, no card boxes.
 // ---------------------------------------------------------------------------
 
 function Panel({ children }: { children: ReactNode }) {
@@ -435,7 +435,7 @@ function AppearancePanel({
 }) {
   return (
     <Panel>
-      <Group title="Theme" description="How SuperSky looks in the popup and settings.">
+      <Group title="Theme" description="How Supersky looks in the popup and settings.">
         <div className="grid grid-cols-3 gap-3">
           {THEME_OPTIONS.map(({ value, label, icon }) => (
             <button
@@ -564,7 +564,7 @@ function NotificationsPanel({
             <AlertCircleIcon size={16} className="mt-0.5 shrink-0 text-danger" />
             <div className="min-w-0 flex-1">
               <p className="text-[13px] leading-relaxed text-ink-muted">
-                Your browser is currently blocking SuperSky’s banners. Allow them in its
+                Your browser is currently blocking Supersky’s banners. Allow them in its
                 notification settings, then send another test.
               </p>
               <Button
@@ -585,7 +585,7 @@ function NotificationsPanel({
 
       <Group title="Not seeing banners?">
         <p className="text-[13px] leading-relaxed text-ink-muted">
-          Banners only announce activity that happens <em>after</em> they’re switched on — your
+          Banners only announce activity that happens <em>after</em> they’re switched on, so your
           existing backlog stays quiet. New activity is checked about every 15 seconds. Fire a test
           to confirm banners reach your screen:
         </p>
@@ -594,13 +594,13 @@ function NotificationsPanel({
             <BellIcon size={14} /> Send a test banner
           </Button>
           {tested && (
-            <span className="text-xs text-ink-faint">Sent — check the corner of your screen.</span>
+            <span className="text-xs text-ink-faint">Sent. Check the corner of your screen.</span>
           )}
         </div>
         {tested && (
           <div className="mt-4">
             <p className="text-[13px] leading-relaxed text-ink-muted">
-              Didn’t see it? Your system may be muting the browser — make sure its notifications
+              Didn’t see it? Your system may be muting the browser. Make sure its notifications
               are allowed and Do Not Disturb is off.
             </p>
             {OS_NOTIFICATION_SETTINGS && (
@@ -713,7 +713,7 @@ function AboutPanel() {
 
       <Group title="Privacy">
         <p className="text-[13px] leading-relaxed text-ink-muted">
-          SuperSky has no server and no analytics. The extension talks only to your PDS (for
+          Supersky has no server and no analytics. The extension talks only to your PDS (for
           posting) and Bluesky’s link-preview service. Credentials and drafts never leave your
           browser.
         </p>

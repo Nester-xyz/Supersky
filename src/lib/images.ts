@@ -37,7 +37,7 @@ export async function prepareImage(file: File | Blob): Promise<PreparedImage> {
   }
 
   if (file.type === 'image/gif') {
-    throw new Error('GIFs over 950 KB can’t be posted — try a smaller one.');
+    throw new Error('GIFs over 950 KB can’t be posted. Try a smaller one.');
   }
 
   const bitmap = await createImageBitmap(file);

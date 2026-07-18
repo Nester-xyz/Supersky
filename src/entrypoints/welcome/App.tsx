@@ -18,7 +18,7 @@ export default function App() {
       <div className="animate-slide-up flex max-w-md flex-col items-center">
         <LogoMark size={96} />
         <h1 className="mt-8 text-3xl font-bold tracking-tight text-ink">
-          Welcome to Super<span className="text-gradient">Sky</span>
+          Welcome to Super<span className="text-gradient">sky</span>
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-ink-muted">
           The fastest way to post on Bluesky, right from your toolbar.

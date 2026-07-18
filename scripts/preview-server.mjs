@@ -1,6 +1,6 @@
 // Design-preview server: serves the built extension (.output/chrome-mv3) and
 // injects a chrome.* API mock into popup/options so the real bundles render in
-// a normal browser tab. For layout/theme iteration only — run `npm run build`
+// a normal browser tab. For layout/theme iteration only; run `npm run build`
 // first, then `node scripts/preview-server.mjs`.
 //
 //   http://localhost:4173/popup.html              signed-in composer
@@ -60,5 +60,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`SuperSky preview: http://localhost:${port}/popup.html`);
+  console.log(`Supersky preview: http://localhost:${port}/popup.html`);
 });

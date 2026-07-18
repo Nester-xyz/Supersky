@@ -36,7 +36,7 @@ const CLOSED: MentionState = {
  * being typed, fetches matching accounts (debounced), and owns keyboard
  * navigation. The caller wires `sync` to text/selection changes, forwards
  * `onKeyDown`, and renders `menu` inside a positioned wrapper around the
- * textarea. Selecting a person calls `onChoose` with the range to replace —
+ * textarea. Selecting a person calls `onChoose` with the range to replace;
  * facets are still resolved at publish time, so this is purely a UX aid.
  */
 export function useMentionAutocomplete({

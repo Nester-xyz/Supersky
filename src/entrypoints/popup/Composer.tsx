@@ -422,7 +422,7 @@ export function Composer({
               card={card}
               onDismiss={() => {
                 // Closing the preview resets the draft: card AND the typed text
-                // (usually just the pasted URL). Nothing stays "dismissed" —
+                // (usually just the pasted URL). Nothing stays "dismissed":
                 // pasting a URL again fetches a fresh preview.
                 dismissedUrlRef.current = null;
                 requestedUrlRef.current = null;
@@ -903,7 +903,7 @@ function highlightText(text: string): ReactNode[] {
   }
   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
   // Trailing newline: textarea always reserves a line for it, so the overlay
-  // must too — otherwise scrollHeight drifts and the highlight misaligns.
+  // must too, otherwise scrollHeight drifts and the highlight misaligns.
   if (text.endsWith('\n') || text === '') parts.push('\n');
   return parts;
 }

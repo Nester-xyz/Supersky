@@ -1,6 +1,6 @@
 {
   "name": "supersky",
-  "description": "SuperSky, a fast, beautiful Bluesky composer that lives in your toolbar.",
+  "description": "Supersky, a fast, beautiful Bluesky composer that lives in your toolbar.",
   "private": true,
   "version": "0.1.1",
   "type": "module",

@@ -1,7 +1,7 @@
 /**
  * The partial @mention being typed immediately before the caret, if any.
  * `start` is the index of the "@" so the composer can replace "@par" with the
- * chosen handle. Facets are still resolved at publish time — this only drives
+ * chosen handle. Facets are still resolved at publish time; this only drives
  * the typeahead menu.
  */
 export interface MentionQuery {
@@ -12,7 +12,7 @@ export interface MentionQuery {
 }
 
 // Handles are made of letters, digits, dots, and hyphens. The "@" must open a
-// token — at the start of the text or after whitespace — so emails like
+// token, at the start of the text or after whitespace, so emails like
 // "me@host" never trigger the menu.
 const MENTION_BEFORE_CARET = /(?:^|\s)@([a-zA-Z0-9.-]*)$/;
 

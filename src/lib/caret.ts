@@ -9,7 +9,7 @@
 export interface CaretCoordinates {
   top: number;
   left: number;
-  /** Line height at the caret — add it to `top` to sit just under the line. */
+  /** Line height at the caret; add it to `top` to sit just under the line. */
   height: number;
 }
 

@@ -100,7 +100,7 @@ export default defineBackground(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Publishing — one draft to one or more accounts
+// Publishing: one draft to one or more accounts
 // ---------------------------------------------------------------------------
 
 /**
@@ -128,7 +128,7 @@ async function publishToAccounts(request: PublishRequest): Promise<PublishResult
 }
 
 // ---------------------------------------------------------------------------
-// Context menus — share the page, a link, or selected text
+// Context menus: share the page, a link, or selected text
 // ---------------------------------------------------------------------------
 
 async function installContextMenus(): Promise<void> {
@@ -195,7 +195,7 @@ async function openComposer(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Notifications — toolbar badge count + desktop banners for new activity
+// Notifications: toolbar badge count + desktop banners for new activity
 // ---------------------------------------------------------------------------
 
 /** Human phrasing per notification reason; unknown reasons get a fallback. */
@@ -295,7 +295,7 @@ async function announceNew(agent: AtpAgent, count: number): Promise<void> {
   const did = agent.session?.did;
   if (!did) return;
   if (count === 0) {
-    // Everything was read elsewhere (bsky.app, phone) — drop stale toasts.
+    // Everything was read elsewhere (bsky.app, phone), so drop stale toasts.
     await clearToasts();
     return;
   }
@@ -363,7 +363,7 @@ function toastUrl(did: string, item: NotificationView): string {
 }
 
 async function createToast(did: string, item: NotificationView): Promise<void> {
-  // Replies, quotes, and mentions carry the author's post text — surface it.
+  // Replies, quotes, and mentions carry the author's post text, so surface it.
   const record = item.record as { text?: unknown } | undefined;
   const text = typeof record?.text === 'string' ? record.text : '';
   const avatar = await fetchIconDataUrl(item.author.avatar);
@@ -377,17 +377,17 @@ async function createToast(did: string, item: NotificationView): Promise<void> {
 }
 
 /**
- * Label the toast body as SuperSky's — the OS header only ever credits the
- * browser. Firefox rejects the property, so it's added everywhere else.
+ * Label the toast body as Supersky's, since the OS header only ever credits
+ * the browser. Firefox rejects the property, so it's added everywhere else.
  */
 function branding(): { contextMessage?: string } {
-  return import.meta.env.BROWSER === 'firefox' ? {} : { contextMessage: 'SuperSky' };
+  return import.meta.env.BROWSER === 'firefox' ? {} : { contextMessage: 'Supersky' };
 }
 
 /**
- * Inline a remote avatar as a data: URL — notification icons can't reference
- * the web directly. Returns null on any failure so callers fall back to the
- * extension icon.
+ * Inline a remote avatar as a data: URL, since notification icons can't
+ * reference the web directly. Returns null on any failure so callers fall back
+ * to the extension icon.
  */
 async function fetchIconDataUrl(url: string | undefined): Promise<string | null> {
   if (!url) return null;
@@ -413,7 +413,7 @@ async function clearToasts(): Promise<void> {
     const all = await browser.notifications.getAll();
     await Promise.all(Object.keys(all).map((id) => browser.notifications.clear(id)));
   } catch {
-    // Nothing shown, or the API is unavailable — either way we're done.
+    // Nothing shown, or the API is unavailable. Either way we're done.
   }
 }
 
@@ -434,7 +434,7 @@ async function sendTestToast(): Promise<null> {
   await browser.notifications.create(`supersky:test:${Date.now()}`, {
     type: 'basic',
     iconUrl: browser.runtime.getURL('/icon/128.png'),
-    title: 'SuperSky banners are working',
+    title: 'Supersky banners are working',
     message: 'New likes, replies, mentions, and follows will pop up like this.',
     ...branding(),
   });

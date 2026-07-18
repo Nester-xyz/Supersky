@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { cx } from './ui';
 
 /**
- * The SuperSky mark: a single sparkle in the night sky. Deliberately minimal —
+ * The Supersky mark: a single sparkle in the night sky. Deliberately minimal:
  * one clean four-point star on a deep gradient tile. Kept in sync with
  * brand/logo.svg (the source for the PNG toolbar icons).
  */
@@ -30,7 +30,7 @@ export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cx('text-[15px] font-semibold tracking-tight text-ink', className)}>
       Super
-      <span className="text-gradient">Sky</span>
+      <span className="text-gradient">sky</span>
     </span>
   );
 }

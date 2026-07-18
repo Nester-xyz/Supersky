@@ -9,8 +9,8 @@ import App from './App';
 const isWindowMode = new URLSearchParams(window.location.search).get('mode') === 'window';
 
 if (!isWindowMode && readAuthHint() !== 'in') {
-  // Known (or presumed) signed out: open the settings page — which hosts the
-  // sign-in form — and close the popup WITHOUT rendering anything, so there is
+  // Known (or presumed) signed out: open the settings page, which hosts the
+  // sign-in form, and close the popup WITHOUT rendering anything, so there is
   // no flash of popup content. The async session check on the settings page
   // corrects the cache if it was ever wrong.
   document.documentElement.classList.add('redirecting');

@@ -1,7 +1,7 @@
 import type { ReactNode, SVGProps } from 'react';
 
 /**
- * SuperSky's hand-drawn icon set: 24px grid, 1.8 stroke, rounded caps.
+ * Supersky's hand-drawn icon set: 24px grid, 1.8 stroke, rounded caps.
  * Kept in-house (no icon library) so the visual language stays ours.
  */
 type IconProps = SVGProps<SVGSVGElement> & { size?: number };

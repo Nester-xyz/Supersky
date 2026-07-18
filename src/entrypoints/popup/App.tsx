@@ -20,8 +20,8 @@ export default function App() {
     sendMessage('auth:get-state', undefined)
       .then((state) => mounted && setView(state))
       .catch(() => mounted && setView({ status: 'signed-out' }));
-    // Opening the popup is a natural moment to reconcile the toolbar badge —
-    // fire-and-forget so a slow network never delays the composer.
+    // Opening the popup is a natural moment to reconcile the toolbar badge.
+    // Fire-and-forget so a slow network never delays the composer.
     void sendMessage('notif:refresh', undefined).catch(() => undefined);
     const unsubscribe = onAuthChanged((state) => setView(state));
     return () => {
@@ -31,7 +31,7 @@ export default function App() {
   }, []);
 
   // Mirror auth state to the synchronous cache the popup reads on next open,
-  // and — if signed out — hand off to the settings page (which hosts sign-in)
+  // and, if signed out, hand off to the settings page (which hosts sign-in)
   // and close the popup.
   useEffect(() => {
     if (view === 'loading') return;
@@ -45,7 +45,7 @@ export default function App() {
   const account = signedIn?.account ?? null;
   const accounts = signedIn?.accounts ?? [];
 
-  // Signed out (only reachable when the cache was stale) — render nothing
+  // Signed out (only reachable when the cache was stale), so render nothing
   // visible while the effect above opens settings and closes the popup.
   if (view !== 'loading' && view.status === 'signed-out') {
     return <div className="min-h-[100px]" aria-hidden="true" />;
