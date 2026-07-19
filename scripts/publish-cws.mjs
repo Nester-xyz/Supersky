@@ -208,10 +208,11 @@ async function api(url, token, init = {}) {
   return data;
 }
 
-// The UploadState enum uses names like UPLOAD_SUCCESS / UPLOAD_IN_PROGRESS;
-// matching on the substring keeps this working if the names are extended.
-const isSuccess = (state) => typeof state === 'string' && state.includes('SUCCESS');
-const isPending = (state) => typeof state === 'string' && state.includes('IN_PROGRESS');
+// v2 UploadState: UPLOAD_STATE_UNSPECIFIED | SUCCEEDED | IN_PROGRESS | FAILED |
+// NOT_FOUND. An unknown state falls through to the error path rather than being
+// treated as success.
+const isSuccess = (state) => state === 'SUCCEEDED';
+const isPending = (state) => state === 'IN_PROGRESS';
 
 function requireEnv(names) {
   const missing = names.filter((name) => !process.env[name]);
