@@ -15,6 +15,9 @@
     "zip": "wxt zip",
     "icons": "node scripts/generate-icons.mjs",
     "compile": "tsc --noEmit",
+    "version:set": "node scripts/set-version.mjs",
+    "release:check": "node scripts/publish-cws.mjs --dry-run",
+    "release:publish": "node scripts/publish-cws.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "postinstall": "wxt prepare"

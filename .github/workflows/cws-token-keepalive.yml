@@ -1,0 +1,33 @@
+name: Keep CWS token alive
+
+# Google expires refresh tokens that go unused for six months. If releases are
+# infrequent, this monthly no-op keeps the credentials warm so a release never
+# fails on a dead token.
+
+on:
+  schedule:
+    - cron: '0 5 1 * *' # 05:00 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Refresh the token
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Exchange refresh token and read item status
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: node scripts/publish-cws.mjs --dry-run

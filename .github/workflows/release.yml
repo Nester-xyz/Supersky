@@ -1,0 +1,113 @@
+name: Release
+
+# Push a tag to cut a release:
+#   npm version patch --no-git-tag-version=false   (or just: git tag v0.2.0)
+#   git push origin v0.2.0
+#
+# The tag is the source of truth for the version number. package.json is
+# rewritten at build time to match, so there is nothing to remember to bump.
+#
+# Tags with a prerelease suffix (v0.2.0-beta.1) build and publish a GitHub
+# prerelease but are NOT sent to the Chrome Web Store.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. v0.2.0'
+        required: true
+      publish_to_store:
+        description: 'Submit to the Chrome Web Store'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Set version from tag
+        id: version
+        run: node scripts/set-version.mjs "${{ inputs.version || github.ref_name }}"
+
+      - name: Prepare WXT types
+        run: npx wxt prepare
+
+      - name: Typecheck
+        run: npm run compile
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build & package zip
+        run: npm run zip
+
+      - name: Locate package
+        id: package
+        run: |
+          zip=$(ls .output/*-chrome.zip | head -n1)
+          echo "path=$zip" >> "$GITHUB_OUTPUT"
+          echo "Built $zip"
+
+      - name: Verify manifest version matches the tag
+        run: |
+          manifest_version=$(node -p "require('./.output/manifest.json').version")
+          expected="${{ steps.version.outputs.version }}"
+          if [ "$manifest_version" != "$expected" ]; then
+            echo "::error::Manifest says $manifest_version but the tag says $expected"
+            exit 1
+          fi
+          echo "Manifest version $manifest_version matches the tag."
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" "${{ steps.package.outputs.path }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            ${{ steps.version.outputs.is_prerelease == 'true' && '--prerelease' || '' }}
+
+      - name: Submit to Chrome Web Store
+        if: >-
+          steps.version.outputs.is_prerelease != 'true' &&
+          (github.event_name == 'push' || inputs.publish_to_store)
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: node scripts/publish-cws.mjs "${{ steps.package.outputs.path }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Release ${{ inputs.version || github.ref_name }}"
+            echo ""
+            echo "- Package: \`${{ steps.package.outputs.path }}\`"
+            echo "- Version: \`${{ steps.version.outputs.version }}\`"
+            echo "- Prerelease: \`${{ steps.version.outputs.is_prerelease }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
