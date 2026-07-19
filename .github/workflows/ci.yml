@@ -45,5 +45,8 @@ jobs:
         with:
           name: supersky-chrome-${{ github.sha }}
           path: .output/*-chrome.zip
+          # WXT builds into .output, a dot-directory, which upload-artifact's
+          # glob treats as hidden and skips unless told otherwise.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
