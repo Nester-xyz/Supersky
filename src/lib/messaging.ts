@@ -5,6 +5,7 @@ import type {
   ActorSuggestion,
   AuthState,
   LinkCardData,
+  ListSuggestion,
   LoginRequest,
   PublishRequest,
   PublishResult,
@@ -23,6 +24,13 @@ export interface MessageContracts {
   'card:fetch': { input: { url: string }; output: LinkCardData | null };
   'post:publish': { input: PublishRequest; output: PublishResult[] };
   'actor:search-typeahead': { input: { query: string; limit?: number }; output: ActorSuggestion[] };
+  /**
+   * Check the account's daily video quota and mint the service-auth token the
+   * popup needs to upload straight to video.bsky.app.
+   */
+  'video:auth': { input: { did: string }; output: { token: string } };
+  /** The active account's curated lists, for threadgate list rules. */
+  'lists:get': { input: undefined; output: ListSuggestion[] };
   /** Poll now and report the unread count (null when signed out/unknown). */
   'notif:refresh': { input: undefined; output: { count: number | null } };
   /** Chrome-level banner permission; 'unknown' where the API is unsupported. */

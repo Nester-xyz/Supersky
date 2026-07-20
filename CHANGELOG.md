@@ -3,6 +3,47 @@
 Notable user-facing changes to Supersky. Releases before 0.1.2 predate this
 file; see the commit history for those.
 
+## Unreleased
+
+### Added
+
+- **Up to 10 images per post.** Matching Bluesky's new limit: up to 4 images
+  post as the classic embed every client renders, and 5–10 use Bluesky's new
+  gallery embed. Multiple images show as a horizontally scrolling strip of
+  tiles with per-image alt text; more images are added from the photo button.
+- **Video upload.** Attach one video (MP4, WebM, MOV, or MPEG; up to 3 minutes
+  and 100 MB, Bluesky's current limits). The upload starts immediately via
+  Bluesky's video service, shows uploading/processing progress on the preview,
+  and pressing Post while it's still processing publishes automatically the
+  moment it's ready. Includes alt text. Video is offered only when the
+  account's email is confirmed (Bluesky requires it); otherwise the composer
+  stays photos-and-GIFs only and explains why if a video is dropped in.
+- **GIF picker.** A searchable GIF popover backed by the same Bluesky GIF
+  service (Klipy) the official app uses, with featured GIFs, infinite scroll,
+  and alt text. GIFs post in the exact format bsky.app plays inline.
+- **"Who can interact" settings.** The pill above the toolbar (like the
+  official composer) opens quote-post and reply controls: everybody, nobody,
+  or any mix of mentioned users, people you follow, your followers, and your
+  lists. Rules publish atomically with the post as threadgate/postgate
+  records, and the pill summarizes the current state.
+- **Drafts.** Save the current post (text, images, GIF, language, and
+  interaction settings) to a local drafts shelf behind the new Drafts button
+  in the header, reopen or delete drafts, and the draft you opened cleans
+  itself up once it's posted. Up to 20 drafts, stored on this device only.
+- **Nothing is lost when the popup closes.** Clicking outside the popup
+  dismisses it instantly, so the composer now autosaves everything as you go —
+  text, language, images, GIF, and interaction settings — and restores it all
+  the next time it opens. (Videos are the one exception: their upload session
+  can't outlive the popup.)
+
+### Changed
+
+- **Sharper image uploads.** Images are now compressed toward Bluesky's new
+  2 MB blob limit at up to 4000 px (previously 1 MB at 2000 px), and alt text
+  can be 2000 characters to match the official app.
+- Posts are published with `applyWrites`, so a post and its interaction
+  settings land in one atomic commit.
+
 ## 0.1.2 (2026-07-19)
 
 ### Added

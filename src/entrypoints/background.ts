@@ -3,8 +3,10 @@ import { browser, type Browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { badgeColor } from '@/lib/accents';
 import { searchActorsTypeahead } from '@/lib/atproto/actor';
+import { fetchMyLists } from '@/lib/atproto/graph';
 import { fetchLinkCard } from '@/lib/atproto/linkcard';
 import { publishPost } from '@/lib/atproto/post';
+import { beginVideoUpload } from '@/lib/atproto/video';
 import {
   getAgent,
   getAuthState,
@@ -52,6 +54,8 @@ export default defineBackground(() => {
     'post:publish': (request) => publishToAccounts(request),
     'actor:search-typeahead': async ({ query, limit }) =>
       searchActorsTypeahead(await requireAgent(), query, limit),
+    'video:auth': async ({ did }) => beginVideoUpload(await requireAgentForDid(did)),
+    'lists:get': async () => fetchMyLists(await requireAgent()),
     'notif:refresh': async () => ({ count: await refreshNotifications() }),
     'notif:status': async () => ({ permission: await notificationPermission() }),
     'notif:test': () => sendTestToast(),
@@ -110,6 +114,11 @@ export default defineBackground(() => {
  */
 async function publishToAccounts(request: PublishRequest): Promise<PublishResult[]> {
   const dids = request.dids?.length ? request.dids : null;
+  // Video blobs are minted per-repo by the upload session, so a video post
+  // can't fan out; the composer locks the target picker to enforce this too.
+  if (request.video && dids && dids.length > 1) {
+    throw new Error('Video posts can only go to one account at a time.');
+  }
   if (!dids) return [await publishPost(await requireAgent(), request)];
 
   const results: PublishResult[] = [];

@@ -23,7 +23,7 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
-    "@atproto/api": "^0.15.5",
+    "@atproto/api": "^0.20.30",
     "motion": "^12.42.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

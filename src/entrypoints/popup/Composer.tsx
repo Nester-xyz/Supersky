@@ -10,7 +10,10 @@ import {
   type ReactNode,
 } from 'react';
 import { browser } from 'wxt/browser';
+import { DraftsSheet } from '@/components/DraftsSheet';
 import { EmojiPicker } from '@/components/EmojiPicker';
+import { GifPicker } from '@/components/GifPicker';
+import { InteractionSheet } from '@/components/InteractionSheet';
 import { useMentionAutocomplete } from '@/components/MentionAutocomplete';
 import { Select } from '@/components/Select';
 import {
@@ -20,11 +23,21 @@ import {
   GlobeIcon,
   ImageIcon,
   LinkIcon,
+  UsersIcon,
   XIcon,
 } from '@/components/icons';
 import { Avatar, IconButton, Spinner, cx } from '@/components/ui';
-import { clearDraft, loadDraft, saveDraft } from '@/lib/draft';
+import {
+  addSavedDraft,
+  clearDraft,
+  deleteSavedDraft,
+  loadAutosave,
+  saveAutosaveImages,
+  saveAutosaveMeta,
+  type SavedDraft,
+} from '@/lib/draft';
 import { toErrorMessage } from '@/lib/errors';
+import type { AttachedGif } from '@/lib/gifs';
 import {
   IMAGE_INPUT_ACCEPT,
   MAX_IMAGES,
@@ -32,6 +45,12 @@ import {
   releaseImage,
   type PreparedImage,
 } from '@/lib/images';
+import {
+  defaultInteraction,
+  isDefaultInteraction,
+  summarizeInteraction,
+  type InteractionSettings,
+} from '@/lib/interaction';
 import { LANGUAGES } from '@/lib/languages';
 import { sendMessage } from '@/lib/messaging';
 import { loadSettings } from '@/lib/settings';
@@ -45,13 +64,49 @@ import {
   truncateToGraphemes,
 } from '@/lib/text';
 import { domainOf, extractFirstUrl } from '@/lib/urls';
-import type { AccountSnapshot, LinkCardData } from '@/lib/types';
+import {
+  VIDEO_INPUT_ACCEPT,
+  isVideoFile,
+  pollVideoJob,
+  prepareVideo,
+  releaseVideo,
+  uploadVideoFile,
+  type PreparedVideo,
+} from '@/lib/video';
+import type { AccountSnapshot, ComposerVideoPayload, LinkCardData } from '@/lib/types';
 
 interface ToastState {
   kind: 'success' | 'error';
   message: string;
   href?: string;
 }
+
+/** Lifecycle of the video pipeline (upload starts the moment it's attached). */
+type VideoJob =
+  | { phase: 'auth'; pct: null }
+  | { phase: 'uploading'; pct: number }
+  | { phase: 'processing'; pct: number | null }
+  | { phase: 'ready'; pct: 100; payload: ComposerVideoPayload }
+  | { phase: 'error'; pct: null; error: string };
+
+type AltTarget =
+  | { kind: 'image'; image: PreparedImage }
+  | { kind: 'gif' }
+  | { kind: 'video' };
+
+type SheetKind = 'none' | 'interaction' | 'drafts';
+
+/**
+ * A Bluesky post carries a single embed, so photos and a video can never share
+ * one post. When both are chosen, the composer keeps the first and explains
+ * the platform limit rather than silently dropping the rest.
+ */
+const PHOTOS_AND_VIDEO_MESSAGE =
+  'Bluesky can’t put photos and a video in the same post. Post them separately.';
+
+/** Bluesky blocks video uploads until the account's email is confirmed. */
+const VIDEO_EMAIL_MESSAGE =
+  'Confirm your email address on Bluesky to upload videos. You can still post photos and GIFs.';
 
 export function Composer({
   account,
@@ -63,13 +118,18 @@ export function Composer({
   const [booted, setBooted] = useState(false);
   const [text, setText] = useState('');
   const [images, setImages] = useState<PreparedImage[]>([]);
+  const [video, setVideo] = useState<PreparedVideo | null>(null);
+  const [videoJob, setVideoJob] = useState<VideoJob | null>(null);
+  const [gif, setGif] = useState<AttachedGif | null>(null);
+  const [interaction, setInteraction] = useState<InteractionSettings>(defaultInteraction);
   const [card, setCard] = useState<LinkCardData | null>(null);
   const [cardLoading, setCardLoading] = useState(false);
   const [lang, setLang] = useState('en');
   const [autoCard, setAutoCard] = useState(true);
   const [posting, setPosting] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [altTarget, setAltTarget] = useState<PreparedImage | null>(null);
+  const [altTarget, setAltTarget] = useState<AltTarget | null>(null);
+  const [sheet, setSheet] = useState<SheetKind>('none');
   const [dragOver, setDragOver] = useState(false);
   const [currentTab, setCurrentTab] = useState<{ url: string; title: string } | null>(null);
   // Which accounts this draft posts as; defaults to the active one, reset when
@@ -81,8 +141,21 @@ export function Composer({
   const dismissedUrlRef = useRef<string | null>(null);
   const requestedUrlRef = useRef<string | null>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
+  const loadedDraftRef = useRef<string | null>(null);
+  const videoAbortRef = useRef<AbortController | null>(null);
+  /** DID whose upload session owns the attached video. */
+  const videoOwnerRef = useRef<string | null>(null);
   const imagesRef = useRef(images);
   imagesRef.current = images;
+  const videoRef = useRef(video);
+  videoRef.current = video;
+  const gifRef = useRef(gif);
+  gifRef.current = gif;
+  // Video upload requires a confirmed email; only an explicit false hides it, so
+  // a not-yet-known status still offers it (attach-time check is the backstop).
+  const canUploadVideo = account.emailConfirmed !== false;
+  const canUploadVideoRef = useRef(canUploadVideo);
+  canUploadVideoRef.current = canUploadVideo;
 
   // Replace the "@partial" range with the chosen handle; facets are resolved
   // for real at publish time, so we only need the plain text here.
@@ -113,16 +186,32 @@ export function Composer({
     });
   }, [accounts, account.did]);
 
-  // -- boot: settings, pending share or saved draft, current tab ------------
+  // -- boot: settings, pending share or restored autosave, current tab ------
   useEffect(() => {
     let mounted = true;
     void (async () => {
       const settings = await loadSettings();
       const share = await takePendingShare();
-      const initialText = share ? buildShareText(share) : ((await loadDraft()) ?? '');
+      // Everything from the last session comes back: outside clicks close the
+      // popup without warning, so the autosave slot holds the whole draft.
+      const restored = await loadAutosave();
       if (!mounted) return;
-      setLang(settings.defaultLang);
+      setLang(restored?.lang ?? settings.defaultLang);
       setAutoCard(settings.autoLinkCard);
+      if (restored) {
+        if (restored.images.length > 0) {
+          setImages(
+            restored.images.map((image) => ({
+              id: crypto.randomUUID(),
+              ...image,
+              previewUrl: `data:${image.mime};base64,${image.base64}`,
+            })),
+          );
+        }
+        setGif(restored.gif);
+        if (restored.interaction) setInteraction(restored.interaction);
+      }
+      const initialText = share ? buildShareText(share) : (restored?.text ?? '');
       if (initialText) setText(initialText);
       setBooted(true);
     })();
@@ -142,9 +231,13 @@ export function Composer({
     };
   }, []);
 
-  // Release preview object URLs when the popup closes.
+  // Release preview object URLs and abort uploads when the popup closes.
   useEffect(() => {
-    return () => imagesRef.current.forEach(releaseImage);
+    return () => {
+      imagesRef.current.forEach(releaseImage);
+      videoAbortRef.current?.abort();
+      if (videoRef.current) releaseVideo(videoRef.current);
+    };
   }, []);
 
   // -- focus caret at the end once booted -----------------------------------
@@ -168,15 +261,47 @@ export function Composer({
   // -- draft autosave ---------------------------------------------------------
   useEffect(() => {
     if (!booted) return;
-    const timer = setTimeout(() => void saveDraft(text), 400);
+    const timer = setTimeout(
+      () =>
+        void saveAutosaveMeta({
+          text,
+          lang,
+          gif,
+          interaction: isDefaultInteraction(interaction) ? null : interaction,
+        }),
+      400,
+    );
     return () => clearTimeout(timer);
-  }, [text, booted]);
+  }, [text, lang, gif, interaction, booted]);
+
+  // Attachments change discretely, so they persist immediately on change.
+  useEffect(() => {
+    if (!booted) return;
+    void saveAutosaveImages(
+      images.map(({ base64, mime, alt, width, height }) => ({ base64, mime, alt, width, height })),
+    );
+  }, [images, booted]);
+
+  // The header's Drafts button lives outside this component; it knocks via a
+  // window event.
+  useEffect(() => {
+    const open = () => setSheet('drafts');
+    window.addEventListener('supersky:open-drafts', open);
+    return () => window.removeEventListener('supersky:open-drafts', open);
+  }, []);
+
+  // A draft loaded from the shelf is only consumed when it's actually posted;
+  // clearing the composer by hand breaks that link so an unrelated later post
+  // never deletes it.
+  useEffect(() => {
+    if (!text && images.length === 0 && !gif && !video) loadedDraftRef.current = null;
+  }, [text, images.length, gif, video]);
 
   // -- link card detection ----------------------------------------------------
   const detectedUrl = useMemo(() => extractFirstUrl(text), [text]);
 
   useEffect(() => {
-    if (!booted || !autoCard || images.length > 0) return;
+    if (!booted || !autoCard || images.length > 0 || gif || video) return;
     if (!detectedUrl) {
       requestedUrlRef.current = null;
       setCard(null);
@@ -200,18 +325,71 @@ export function Composer({
         });
     }, 500);
     return () => clearTimeout(timer);
-  }, [detectedUrl, autoCard, images.length, booted]);
+  }, [detectedUrl, autoCard, images.length, gif, video, booted]);
 
-  // -- images -----------------------------------------------------------------
+  // -- media: images + video --------------------------------------------------
   const addFiles = useCallback(async (files: Iterable<File>) => {
     const list = Array.from(files);
     if (list.length === 0) return;
+    let videoFiles = list.filter(isVideoFile);
+    let imageFiles = list.filter((file) => !isVideoFile(file));
+
+    // Video needs a confirmed email on the account. If it isn't allowed, drop
+    // any video from the selection (keeping photos), or explain when it's the
+    // only thing chosen.
+    if (videoFiles.length > 0 && !canUploadVideoRef.current) {
+      if (imageFiles.length === 0) {
+        setToast({ kind: 'error', message: VIDEO_EMAIL_MESSAGE });
+        return;
+      }
+      videoFiles = [];
+    }
+
+    // A single drop that mixes photos and a video can't all go on one post, so
+    // keep whichever type came first in the selection and drop the other.
+    const droppedMix = videoFiles.length > 0 && imageFiles.length > 0;
+    if (droppedMix) {
+      if (isVideoFile(list[0]!)) imageFiles = [];
+      else videoFiles = [];
+    }
+
+    if (videoFiles.length > 0) {
+      if (imagesRef.current.length > 0) {
+        setToast({ kind: 'error', message: PHOTOS_AND_VIDEO_MESSAGE });
+        return;
+      }
+      if (gifRef.current) {
+        setToast({ kind: 'error', message: 'A post can have a GIF or a video, not both.' });
+        return;
+      }
+      if (videoRef.current) {
+        setToast({ kind: 'error', message: 'A post can have only one video.' });
+        return;
+      }
+      const firstVideo = videoFiles[0];
+      if (firstVideo) await attachVideo(firstVideo);
+      if (droppedMix) {
+        setToast({ kind: 'error', message: PHOTOS_AND_VIDEO_MESSAGE });
+      } else if (videoFiles.length > 1) {
+        setToast({ kind: 'error', message: 'A post can have only one video, so the first was used.' });
+      }
+      return;
+    }
+
+    if (videoRef.current) {
+      setToast({ kind: 'error', message: PHOTOS_AND_VIDEO_MESSAGE });
+      return;
+    }
+    if (gifRef.current) {
+      setToast({ kind: 'error', message: 'A post can have a GIF or photos, not both.' });
+      return;
+    }
     const room = MAX_IMAGES - imagesRef.current.length;
     if (room <= 0) {
       setToast({ kind: 'error', message: `You can attach up to ${MAX_IMAGES} images.` });
       return;
     }
-    for (const file of list.slice(0, room)) {
+    for (const file of imageFiles.slice(0, room)) {
       try {
         const prepared = await prepareImage(file);
         setImages((prev) => (prev.length < MAX_IMAGES ? [...prev, prepared] : prev));
@@ -222,14 +400,121 @@ export function Composer({
         setToast({ kind: 'error', message: toErrorMessage(err) });
       }
     }
-    if (list.length > room) {
+    if (droppedMix) {
+      setToast({ kind: 'error', message: PHOTOS_AND_VIDEO_MESSAGE });
+    } else if (imageFiles.length > room) {
       setToast({ kind: 'error', message: `Only ${MAX_IMAGES} images fit on a post.` });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function removeImage(image: PreparedImage) {
     releaseImage(image);
     setImages((prev) => prev.filter((item) => item.id !== image.id));
+  }
+
+  async function attachVideo(file: File) {
+    try {
+      const prepared = await prepareVideo(file);
+      // Video blobs belong to the uploading account's repo, so the post can
+      // only go out as that account.
+      setTargets([account.did]);
+      videoOwnerRef.current = account.did;
+      setVideo(prepared);
+      setCard(null);
+      setCardLoading(false);
+      startVideoUpload(prepared, account.did);
+    } catch (err) {
+      setToast({ kind: 'error', message: toErrorMessage(err) });
+    }
+  }
+
+  function startVideoUpload(prepared: PreparedVideo, did: string) {
+    videoAbortRef.current?.abort();
+    const controller = new AbortController();
+    videoAbortRef.current = controller;
+    setVideoJob({ phase: 'auth', pct: null });
+
+    void (async () => {
+      try {
+        const { token } = await sendMessage('video:auth', { did });
+        if (controller.signal.aborted) return;
+        setVideoJob({ phase: 'uploading', pct: 0 });
+        const status = await uploadVideoFile({
+          video: prepared,
+          did,
+          token,
+          signal: controller.signal,
+          onProgress: (fraction) =>
+            setVideoJob({ phase: 'uploading', pct: Math.min(100, Math.round(fraction * 100)) }),
+        });
+        // Re-uploads of a known file can come back already completed.
+        let blob: unknown =
+          status.state === 'JOB_STATE_COMPLETED' && status.blob ? status.blob : null;
+        if (!blob) {
+          setVideoJob({ phase: 'processing', pct: null });
+          blob = await pollVideoJob({
+            jobId: status.jobId as string,
+            signal: controller.signal,
+            onProgress: (progress) => setVideoJob({ phase: 'processing', pct: progress }),
+          });
+        }
+        if (controller.signal.aborted) return;
+        setVideoJob({
+          phase: 'ready',
+          pct: 100,
+          payload: {
+            blob,
+            alt: '',
+            width: prepared.width,
+            height: prepared.height,
+            did,
+          },
+        });
+      } catch (err) {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+          return;
+        }
+        const message = toErrorMessage(err);
+        setVideoJob({ phase: 'error', pct: null, error: message });
+        // Surface the reason immediately (e.g. "confirm your email"), not just
+        // the terse "Upload failed" chip, so the user knows what to fix.
+        setToast({ kind: 'error', message });
+      }
+    })();
+  }
+
+  const removeVideo = useCallback(() => {
+    videoAbortRef.current?.abort();
+    videoAbortRef.current = null;
+    if (videoRef.current) releaseVideo(videoRef.current);
+    videoOwnerRef.current = null;
+    setVideo(null);
+    setVideoJob(null);
+  }, []);
+
+  // Switching the signing account invalidates an in-flight/processed upload.
+  useEffect(() => {
+    if (videoRef.current && videoOwnerRef.current && videoOwnerRef.current !== account.did) {
+      removeVideo();
+      setToast({
+        kind: 'error',
+        message: 'Video removed — uploads are tied to the account that started them.',
+      });
+    }
+  }, [account.did, removeVideo]);
+
+  function attachGif(next: AttachedGif) {
+    if (imagesRef.current.length > 0 || videoRef.current) {
+      setToast({
+        kind: 'error',
+        message: `A post can have one kind of media, so remove the ${videoRef.current ? 'video' : 'photos'} first to add a GIF.`,
+      });
+      return;
+    }
+    setGif(next);
+    setCard(null);
+    setCardLoading(false);
   }
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -249,13 +534,37 @@ export function Composer({
   // -- publish ----------------------------------------------------------------
   const graphemes = useMemo(() => graphemeLength(text), [text]);
   const remaining = MAX_GRAPHEMES - graphemes;
-  const canPost = !posting && remaining >= 0 && (text.trim().length > 0 || images.length > 0);
+  const hasContent = text.trim().length > 0 || images.length > 0 || Boolean(gif) || Boolean(video);
+  // An attached video must finish uploading/processing before the post can go
+  // out (its blob only exists once the job completes). Until then, Post is off.
+  const videoNotReady = Boolean(video) && videoJob?.phase !== 'ready';
+  const canPost = !posting && remaining >= 0 && hasContent && !videoNotReady;
+
+  const composerDirty = hasContent;
+
+  function resetComposer() {
+    imagesRef.current.forEach(releaseImage);
+    setImages([]);
+    removeVideo();
+    setGif(null);
+    setInteraction(defaultInteraction());
+    setText('');
+    selectionRef.current = { start: 0, end: 0 };
+    mentions.dismiss();
+    setCard(null);
+    dismissedUrlRef.current = null;
+    requestedUrlRef.current = null;
+    loadedDraftRef.current = null;
+  }
 
   async function publish() {
-    if (!canPost) return;
+    if (posting) return;
     setPosting(true);
     setToast(null);
     const requested = targets.length || 1;
+    const loadedDraftId = loadedDraftRef.current;
+    const videoPayload =
+      video && videoJob?.phase === 'ready' ? { ...videoJob.payload, alt: video.alt } : null;
     try {
       const results = await sendMessage('post:publish', {
         text,
@@ -267,18 +576,15 @@ export function Composer({
           width,
           height,
         })),
-        card: images.length === 0 ? card : null,
+        video: videoPayload,
+        gif,
+        card: images.length === 0 && !gif && !video ? card : null,
+        interaction: isDefaultInteraction(interaction) ? null : interaction,
         dids: targets,
       });
-      images.forEach(releaseImage);
-      setImages([]);
-      setText('');
-      selectionRef.current = { start: 0, end: 0 };
-      mentions.dismiss();
-      setCard(null);
-      dismissedUrlRef.current = null;
-      requestedUrlRef.current = null;
+      resetComposer();
       await clearDraft();
+      if (loadedDraftId) await deleteSavedDraft(loadedDraftId);
       const posted = results.length;
       const allOk = posted >= requested;
       setToast({
@@ -299,12 +605,18 @@ export function Composer({
     }
   }
 
+  function requestPublish() {
+    // Post stays disabled until any attached video is ready, so this is a
+    // straight publish.
+    if (canPost) void publish();
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     // The mention menu claims arrows/Enter/Tab/Escape while it is open.
     if (mentions.onKeyDown(event)) return;
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
-      void publish();
+      requestPublish();
     }
   }
 
@@ -333,8 +645,65 @@ export function Composer({
     });
   }
 
-  const showShareChip = currentTab !== null && text === '' && images.length === 0;
+  // -- drafts -----------------------------------------------------------------
+  const canSaveDraft = text.trim().length > 0 || images.length > 0 || Boolean(gif);
+
+  async function saveCurrentDraft() {
+    await addSavedDraft({
+      text,
+      lang,
+      images: images.map(({ base64, mime, alt, width, height }) => ({
+        base64,
+        mime,
+        alt,
+        width,
+        height,
+      })),
+      gif,
+      interaction: isDefaultInteraction(interaction) ? null : interaction,
+      hadVideo: Boolean(video),
+    });
+    resetComposer();
+    await clearDraft();
+  }
+
+  function openSavedDraft(draft: SavedDraft) {
+    imagesRef.current.forEach(releaseImage);
+    removeVideo();
+    setImages(
+      draft.images.map((image) => ({
+        id: crypto.randomUUID(),
+        ...image,
+        previewUrl: `data:${image.mime};base64,${image.base64}`,
+      })),
+    );
+    setGif(draft.gif ?? null);
+    setInteraction(draft.interaction ?? defaultInteraction());
+    setText(draft.text);
+    if (draft.lang) setLang(draft.lang);
+    setCard(null);
+    setCardLoading(false);
+    dismissedUrlRef.current = null;
+    requestedUrlRef.current = null;
+    loadedDraftRef.current = draft.id;
+    setSheet('none');
+    selectionRef.current = { start: draft.text.length, end: draft.text.length };
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      el?.focus();
+      el?.setSelectionRange(draft.text.length, draft.text.length);
+    });
+  }
+
+  const showShareChip =
+    currentTab !== null && text === '' && images.length === 0 && !gif && !video;
   const firstName = (account.displayName ?? account.handle).split(/\s+/)[0] ?? '';
+  const interactionLimited = !isDefaultInteraction(interaction);
+  const mediaButtonDisabled = images.length >= MAX_IMAGES || Boolean(video) || Boolean(gif);
+  // Any attachment preview shares one full-width row below the composer, so it
+  // spans the popup instead of being indented under the avatar column.
+  const showLinkPreview = images.length === 0 && !gif && !video && (cardLoading || Boolean(card));
+  const hasPreview = images.length > 0 || Boolean(gif) || Boolean(video) || showLinkPreview;
 
   return (
     <div
@@ -348,100 +717,163 @@ export function Composer({
     >
       <div
         className={cx(
-          'flex flex-1 gap-3 px-4 pt-4 pb-1 transition-colors',
+          'flex flex-1 flex-col px-4 pt-4 pb-1 transition-colors',
           dragOver && 'bg-accent-soft',
         )}
       >
-        <PostTargets
-          accounts={accounts}
-          active={account}
-          targets={targets}
-          onChange={setTargets}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="relative">
-            <HighlightOverlay text={text} />
-            <textarea
-              ref={textareaRef}
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                mentions.sync();
-              }}
-              onPaste={handlePaste}
-              onKeyDown={handleKeyDown}
-              onSelect={() => {
-                rememberSelection();
-                mentions.sync();
-              }}
-              onBlur={() => mentions.dismiss()}
-              onScroll={() => {
-                const overlay = textareaRef.current?.parentElement?.querySelector('.highlight-overlay');
-                if (overlay && textareaRef.current) {
-                  overlay.scrollTop = textareaRef.current.scrollTop;
-                }
-              }}
-              placeholder={targets.length > 1 ? "What's on your mind?" : `What's up, ${firstName}?`}
-              rows={5}
-              className="relative z-10 max-h-[280px] min-h-[150px] w-full resize-none bg-transparent pt-1.5 text-[15px] leading-relaxed text-transparent caret-ink outline-none placeholder:text-ink-faint"
-            />
-            {mentions.menu}
-          </div>
-
-          {showShareChip && (
-            <button
-              type="button"
-              onClick={() => {
-                setText(currentTab.url);
-                selectionRef.current = {
-                  start: currentTab.url.length,
-                  end: currentTab.url.length,
-                };
-              }}
-              title={currentTab.url}
-              className="mb-2 flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface-2 py-1 pr-3 pl-2 text-xs text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
-            >
-              <LinkIcon size={12} className="shrink-0" />
-              <span className="truncate">Share “{truncateToGraphemes(currentTab.title, 44)}”</span>
-            </button>
-          )}
-
-          {images.length > 0 && (
-            <ImageGrid images={images} onRemove={removeImage} onEditAlt={setAltTarget} />
-          )}
-
-          {images.length === 0 && cardLoading && (
-            <div className="mt-1 mb-2 flex h-[76px] items-center justify-center gap-2 rounded-xl border border-line text-xs text-ink-faint">
-              <Spinner size={13} />
-              Fetching link preview…
+        <div className="flex gap-3">
+          <PostTargets
+            accounts={accounts}
+            active={account}
+            targets={targets}
+            onChange={setTargets}
+            locked={Boolean(video)}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="relative">
+              <HighlightOverlay text={text} />
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  mentions.sync();
+                }}
+                onPaste={handlePaste}
+                onKeyDown={handleKeyDown}
+                onSelect={() => {
+                  rememberSelection();
+                  mentions.sync();
+                }}
+                onBlur={() => mentions.dismiss()}
+                onScroll={() => {
+                  const overlay = textareaRef.current?.parentElement?.querySelector('.highlight-overlay');
+                  if (overlay && textareaRef.current) {
+                    overlay.scrollTop = textareaRef.current.scrollTop;
+                  }
+                }}
+                placeholder={targets.length > 1 ? "What's on your mind?" : `What's up, ${firstName}?`}
+                rows={5}
+                className="relative z-10 max-h-[280px] min-h-[150px] w-full resize-none bg-transparent pt-1.5 text-[15px] leading-relaxed text-transparent caret-ink outline-none placeholder:text-ink-faint"
+              />
+              {mentions.menu}
             </div>
-          )}
 
-          {images.length === 0 && !cardLoading && card && (
-            <CardPreview
-              card={card}
-              onDismiss={() => {
-                // Closing the preview resets the draft: card AND the typed text
-                // (usually just the pasted URL). Nothing stays "dismissed":
-                // pasting a URL again fetches a fresh preview.
-                dismissedUrlRef.current = null;
-                requestedUrlRef.current = null;
-                setCard(null);
-                setText('');
-                selectionRef.current = { start: 0, end: 0 };
-                mentions.dismiss();
-                textareaRef.current?.focus();
-              }}
-            />
-          )}
+            {showShareChip && (
+              <button
+                type="button"
+                onClick={() => {
+                  setText(currentTab.url);
+                  selectionRef.current = {
+                    start: currentTab.url.length,
+                    end: currentTab.url.length,
+                  };
+                }}
+                title={currentTab.url}
+                className="mb-2 flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface-2 py-1 pr-3 pl-2 text-xs text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
+              >
+                <LinkIcon size={12} className="shrink-0" />
+                <span className="truncate">Share “{truncateToGraphemes(currentTab.title, 44)}”</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Attachments span the full width and sit at the bottom of the
+            composer, just above the interaction bar (mt-auto drops them down). */}
+        {hasPreview && (
+          <div className="mt-auto pt-2">
+            {images.length > 0 && (
+              <MediaStrip
+                images={images}
+                onRemove={removeImage}
+                onEditAlt={(image) => setAltTarget({ kind: 'image', image })}
+              />
+            )}
+
+            {gif && (
+              <GifAttachment
+                gif={gif}
+                onEditAlt={() => setAltTarget({ kind: 'gif' })}
+                onRemove={() => setGif(null)}
+              />
+            )}
+
+            {video && (
+              <VideoAttachment
+                video={video}
+                onEditAlt={() => setAltTarget({ kind: 'video' })}
+                onRemove={removeVideo}
+              />
+            )}
+
+            {showLinkPreview && cardLoading && (
+              <div className="flex h-[76px] items-center justify-center gap-2 rounded-xl border border-line text-xs text-ink-faint">
+                <Spinner size={13} />
+                Fetching link preview…
+              </div>
+            )}
+
+            {showLinkPreview && !cardLoading && card && (
+              <CardPreview
+                card={card}
+                onDismiss={() => {
+                  // Closing the preview resets the draft: card AND the typed text
+                  // (usually just the pasted URL). Nothing stays "dismissed":
+                  // pasting a URL again fetches a fresh preview.
+                  dismissedUrlRef.current = null;
+                  requestedUrlRef.current = null;
+                  setCard(null);
+                  setText('');
+                  selectionRef.current = { start: 0, end: 0 };
+                  mentions.dismiss();
+                  textareaRef.current?.focus();
+                }}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 px-3 pb-2">
+        <button
+          type="button"
+          onClick={() => setSheet('interaction')}
+          aria-haspopup="dialog"
+          title="Choose who can reply and quote"
+          className={cx(
+            'inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors',
+            interactionLimited
+              ? 'border-transparent bg-accent-soft text-accent hover:brightness-105'
+              : 'border-line text-accent hover:bg-accent-soft',
+          )}
+        >
+          {interactionLimited ? (
+            <UsersIcon size={13} className="shrink-0" />
+          ) : (
+            <GlobeIcon size={13} className="shrink-0" />
+          )}
+          <span className="truncate">{summarizeInteraction(interaction)}</span>
+          <ChevronDownIcon size={12} className="shrink-0 text-ink-faint" />
+        </button>
+
+        <div className="flex-1" />
+
+        {/* Video upload status floats here, opposite the interaction pill. */}
+        {video && videoJob && (
+          <VideoUploadPill
+            job={videoJob}
+            onRetry={() => startVideoUpload(video, videoOwnerRef.current ?? account.did)}
+          />
+        )}
       </div>
 
       <footer className="flex items-center gap-1 border-t border-line px-3 py-2.5">
         <input
           ref={fileInputRef}
           type="file"
-          accept={IMAGE_INPUT_ACCEPT}
+          // Only offer video in the OS picker when the account may upload it.
+          accept={canUploadVideo ? `${IMAGE_INPUT_ACCEPT},${VIDEO_INPUT_ACCEPT}` : IMAGE_INPUT_ACCEPT}
           multiple
           hidden
           onChange={(e) => {
@@ -450,12 +882,14 @@ export function Composer({
           }}
         />
         <IconButton
-          title="Add images"
-          disabled={images.length >= MAX_IMAGES}
+          title={canUploadVideo ? 'Add photos or a video' : 'Add photos'}
+          disabled={mediaButtonDisabled}
           onClick={() => fileInputRef.current?.click()}
         >
           <ImageIcon />
         </IconButton>
+
+        <GifPicker disabled={images.length > 0 || Boolean(video)} onSelect={attachGif} />
 
         <EmojiPicker onOpen={rememberSelection} onSelect={insertEmoji} />
 
@@ -481,9 +915,13 @@ export function Composer({
 
         <button
           type="button"
-          onClick={() => void publish()}
+          onClick={requestPublish}
           disabled={!canPost}
-          title="Post (Ctrl+Enter)"
+          title={
+            videoNotReady
+              ? 'Post once the video finishes uploading'
+              : 'Post (Ctrl+Enter)'
+          }
           className="btn btn-primary relative ml-1.5 h-8 gap-1.5 px-4"
         >
           {posting && (
@@ -497,13 +935,52 @@ export function Composer({
 
       {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
 
+      {sheet === 'interaction' && (
+        <InteractionSheet
+          settings={interaction}
+          onChange={setInteraction}
+          onClose={() => setSheet('none')}
+        />
+      )}
+
+      {sheet === 'drafts' && (
+        <DraftsSheet
+          composerDirty={composerDirty}
+          canSaveCurrent={canSaveDraft}
+          onSaveCurrent={saveCurrentDraft}
+          onLoad={openSavedDraft}
+          onClose={() => setSheet('none')}
+        />
+      )}
+
       {altTarget && (
         <AltTextEditor
-          image={altTarget}
+          previewUrl={
+            altTarget.kind === 'image'
+              ? altTarget.image.previewUrl
+              : altTarget.kind === 'gif'
+                ? (gif?.previewUrl ?? '')
+                : (video?.previewUrl ?? '')
+          }
+          mediaKind={altTarget.kind}
+          initial={
+            altTarget.kind === 'image'
+              ? altTarget.image.alt
+              : altTarget.kind === 'gif'
+                ? (gif?.alt ?? '')
+                : (video?.alt ?? '')
+          }
           onSave={(alt) => {
-            setImages((prev) =>
-              prev.map((item) => (item.id === altTarget.id ? { ...item, alt } : item)),
-            );
+            if (altTarget.kind === 'image') {
+              const target = altTarget.image;
+              setImages((prev) =>
+                prev.map((item) => (item.id === target.id ? { ...item, alt } : item)),
+              );
+            } else if (altTarget.kind === 'gif') {
+              setGif((prev) => (prev ? { ...prev, alt } : prev));
+            } else {
+              setVideo((prev) => (prev ? { ...prev, alt } : prev));
+            }
             setAltTarget(null);
           }}
           onClose={() => setAltTarget(null)}
@@ -564,18 +1041,21 @@ function LanguagePicker({ value, onChange }: { value: string; onChange: (v: stri
 /**
  * The composer avatar doubles as the cross-post picker: one account shows just
  * the avatar; with several signed in, clicking opens a toggle list and the
- * selected accounts appear as an overlapping stack of bubbles.
+ * selected accounts appear as an overlapping stack of bubbles. While a video
+ * is attached the picker locks, since video uploads are per-account.
  */
 function PostTargets({
   accounts,
   active,
   targets,
   onChange,
+  locked,
 }: {
   accounts: AccountSnapshot[];
   active: AccountSnapshot;
   targets: string[];
   onChange: (dids: string[]) => void;
+  locked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -596,8 +1076,12 @@ function PostTargets({
     };
   }, [open]);
 
-  if (accounts.length < 2) {
-    return <Avatar src={active.avatar} name={active.displayName ?? active.handle} size={38} />;
+  if (accounts.length < 2 || locked) {
+    return (
+      <span title={locked ? 'Video posts go out as one account' : undefined}>
+        <Avatar src={active.avatar} name={active.displayName ?? active.handle} size={38} />
+      </span>
+    );
   }
 
   // Selected accounts in target order; the first is the primary poster.
@@ -694,7 +1178,13 @@ function PostTargets({
 
 // ---------------------------------------------------------------------------
 
-function ImageGrid({
+/**
+ * Attached images. A single image gets a large shrink-wrapped preview; two or
+ * more become a horizontally scrolling strip of square tiles (the pattern the
+ * official composer uses, which keeps 10 images workable in a popup). More
+ * images are added from the toolbar's photo button.
+ */
+function MediaStrip({
   images,
   onRemove,
   onEditAlt,
@@ -703,50 +1193,215 @@ function ImageGrid({
   onRemove: (image: PreparedImage) => void;
   onEditAlt: (image: PreparedImage) => void;
 }) {
-  const single = images.length === 1;
+  const single = images.length === 1 ? images[0] : undefined;
+  if (single) {
+    const image = single;
+    return (
+      <div className="mb-2 grid grid-cols-1 gap-1.5">
+        <div className="group relative mr-auto w-fit max-w-full overflow-hidden rounded-xl border border-line bg-surface-2">
+          <img
+            src={image.previewUrl}
+            alt={image.alt || 'Attached image'}
+            className="block max-h-52 min-h-[60px] w-auto max-w-full object-contain"
+          />
+          <AltBadge image={image} onEditAlt={onEditAlt} />
+          <RemoveBadge label="Remove image" onClick={() => onRemove(image)} />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={cx('mb-2 grid gap-1.5', single ? 'grid-cols-1' : 'grid-cols-2')}>
+    <div className="mb-2 flex snap-x gap-1.5 overflow-x-auto pb-1" role="list" aria-label="Attached images">
       {images.map((image) => (
         <div
           key={image.id}
-          className={cx(
-            'group relative overflow-hidden rounded-xl border border-line bg-surface-2',
-            // Shrink-wrap a lone image so the ALT/remove buttons sit on its
-            // corners instead of floating over letterbox padding.
-            single && 'mx-auto w-fit max-w-full',
-          )}
+          role="listitem"
+          className="group relative size-[112px] shrink-0 snap-start overflow-hidden rounded-xl border border-line bg-surface-2"
         >
           <img
             src={image.previewUrl}
             alt={image.alt || 'Attached image'}
-            className={cx(
-              single
-                ? 'block max-h-44 min-h-[60px] w-auto max-w-full object-contain'
-                : 'h-24 w-full object-cover',
-            )}
+            className="h-full w-full object-cover"
           />
-          <button
-            type="button"
-            title={image.alt ? 'Edit alt text' : 'Add alt text'}
-            onClick={() => onEditAlt(image)}
-            className="absolute bottom-1.5 left-1.5 flex h-5 cursor-pointer items-center gap-0.5 rounded-md bg-black/65 px-1.5 text-[10px] font-bold tracking-wide text-white backdrop-blur-sm transition-colors hover:bg-black/85"
-          >
-            {image.alt && <CheckIcon size={10} />}
-            ALT
-          </button>
-          <button
-            type="button"
-            title="Remove image"
-            onClick={() => onRemove(image)}
-            className="absolute top-1.5 right-1.5 grid size-6 cursor-pointer place-items-center rounded-full bg-black/65 text-white backdrop-blur-sm transition-colors hover:bg-black/85"
-          >
-            <XIcon size={13} />
-          </button>
+          <AltBadge image={image} onEditAlt={onEditAlt} compact />
+          <RemoveBadge label="Remove image" onClick={() => onRemove(image)} compact />
         </div>
       ))}
     </div>
   );
 }
+
+function AltBadge({
+  image,
+  onEditAlt,
+  compact,
+}: {
+  image: PreparedImage;
+  onEditAlt: (image: PreparedImage) => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={image.alt ? 'Edit alt text' : 'Add alt text'}
+      onClick={() => onEditAlt(image)}
+      className={cx(
+        'absolute bottom-1.5 left-1.5 flex cursor-pointer items-center gap-0.5 rounded-md bg-black/65 font-bold tracking-wide text-white backdrop-blur-sm transition-colors hover:bg-black/85',
+        compact ? 'h-[18px] px-1 text-[9px]' : 'h-5 px-1.5 text-[10px]',
+      )}
+    >
+      {image.alt && <CheckIcon size={compact ? 9 : 10} />}
+      ALT
+    </button>
+  );
+}
+
+function RemoveBadge({
+  label,
+  onClick,
+  compact,
+}: {
+  label: string;
+  onClick: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={cx(
+        'absolute top-1.5 right-1.5 grid cursor-pointer place-items-center rounded-full bg-black/65 text-white backdrop-blur-sm transition-colors hover:bg-black/85',
+        compact ? 'size-5' : 'size-6',
+      )}
+    >
+      <XIcon size={compact ? 11 : 13} />
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function GifAttachment({
+  gif,
+  onEditAlt,
+  onRemove,
+}: {
+  gif: AttachedGif;
+  onEditAlt: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="animate-fade-in relative mr-auto mb-2 w-fit max-w-full overflow-hidden rounded-xl border border-line bg-surface-2">
+      <img
+        src={gif.previewUrl}
+        alt={gif.alt || gif.title}
+        className="block max-h-44 min-h-[60px] w-auto max-w-full object-contain"
+      />
+      <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
+        <span className="flex h-5 items-center rounded-md bg-black/65 px-1.5 text-[10px] font-bold tracking-wide text-white backdrop-blur-sm">
+          GIF
+        </span>
+        <button
+          type="button"
+          title={gif.alt ? 'Edit alt text' : 'Add alt text'}
+          onClick={onEditAlt}
+          className="flex h-5 cursor-pointer items-center gap-0.5 rounded-md bg-black/65 px-1.5 text-[10px] font-bold tracking-wide text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+        >
+          {gif.alt && <CheckIcon size={10} />}
+          ALT
+        </button>
+      </div>
+      <RemoveBadge label="Remove GIF" onClick={onRemove} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function VideoAttachment({
+  video,
+  onEditAlt,
+  onRemove,
+}: {
+  video: PreparedVideo;
+  onEditAlt: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="animate-fade-in relative mr-auto mb-2 w-fit max-w-full overflow-hidden rounded-xl border border-line bg-black">
+      {/* No native player chrome: autoplays muted on a loop like the official
+          composer. The remove button and the floating upload pill (in the
+          interaction bar) are the only controls. */}
+      <video
+        src={video.previewUrl}
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="block max-h-52 min-h-[60px] w-auto max-w-full object-contain"
+      />
+      <button
+        type="button"
+        title={video.alt ? 'Edit alt text' : 'Add alt text'}
+        onClick={onEditAlt}
+        className="absolute bottom-1.5 left-1.5 flex h-5 cursor-pointer items-center gap-0.5 rounded-md bg-black/65 px-1.5 text-[10px] font-bold tracking-wide text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+      >
+        {video.alt && <CheckIcon size={10} />}
+        ALT
+      </button>
+      <RemoveBadge label="Remove video" onClick={onRemove} />
+    </div>
+  );
+}
+
+/**
+ * The video's upload/processing status, as a pill that floats opposite the
+ * interaction pill (rather than sitting over the video), with an inline
+ * progress bar while bytes move.
+ */
+function VideoUploadPill({ job, onRetry }: { job: VideoJob; onRetry: () => void }) {
+  // Once ready, the pill disappears; the now-enabled Post button is the signal.
+  if (job.phase === 'ready') return null;
+  if (job.phase === 'error') {
+    return (
+      <span className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-danger-soft pr-1 pl-2.5 text-xs font-medium text-danger">
+        <AlertCircleIcon size={13} className="shrink-0" />
+        Upload failed
+        <button
+          type="button"
+          onClick={onRetry}
+          className="flex h-5 cursor-pointer items-center rounded-full bg-danger px-2 text-[11px] font-semibold text-white transition-[filter] hover:brightness-110"
+        >
+          Retry
+        </button>
+      </span>
+    );
+  }
+  const label =
+    job.phase === 'auth' ? 'Preparing' : job.phase === 'uploading' ? 'Uploading video' : 'Processing';
+  return (
+    <span className="inline-flex h-7 shrink-0 items-center gap-2 rounded-full border border-line bg-surface pr-2.5 pl-2.5 text-xs font-medium text-ink">
+      <Spinner size={12} className="text-accent" />
+      <span>{label}</span>
+      {typeof job.pct === 'number' && (
+        <>
+          <span className="block h-1 w-10 overflow-hidden rounded-full bg-surface-3">
+            <span
+              className="block h-full rounded-full bg-accent transition-[width] duration-200"
+              style={{ width: `${job.pct}%` }}
+            />
+          </span>
+          <span className="tabular-nums text-ink-muted">{job.pct}%</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 /**
  * Link preview styled like the card Bluesky renders on the published post:
@@ -756,7 +1411,7 @@ function CardPreview({ card, onDismiss }: { card: LinkCardData; onDismiss: () =>
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(card.imageUrl) && !imageFailed;
   return (
-    <div className="animate-fade-in relative mt-1 mb-2 overflow-hidden rounded-xl border border-line bg-surface">
+    <div className="animate-fade-in relative mb-2 overflow-hidden rounded-xl border border-line bg-surface">
       {showImage && (
         <img
           src={card.imageUrl}
@@ -789,11 +1444,15 @@ function CardPreview({ card, onDismiss }: { card: LinkCardData; onDismiss: () =>
 }
 
 function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void }) {
+  // Keep the latest dismiss handler without making it a timer dependency, so
+  // unrelated re-renders (e.g. typing) never restart the countdown.
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
   useEffect(() => {
-    if (toast.kind !== 'success') return;
-    const timer = setTimeout(onDismiss, 6000);
+    // Every toast closes itself after a short, uniform delay.
+    const timer = setTimeout(() => dismissRef.current(), 3000);
     return () => clearTimeout(timer);
-  }, [toast, onDismiss]);
+  }, [toast]);
 
   const success = toast.kind === 'success';
   return (
@@ -831,16 +1490,23 @@ function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void 
   );
 }
 
+const MAX_ALT_LENGTH = 2000;
+
 function AltTextEditor({
-  image,
+  previewUrl,
+  mediaKind,
+  initial,
   onSave,
   onClose,
 }: {
-  image: PreparedImage;
+  previewUrl: string;
+  mediaKind: 'image' | 'gif' | 'video';
+  initial: string;
   onSave: (alt: string) => void;
   onClose: () => void;
 }) {
-  const [value, setValue] = useState(image.alt);
+  const [value, setValue] = useState(initial);
+  const noun = mediaKind === 'video' ? 'video' : mediaKind === 'gif' ? 'GIF' : 'image';
   return (
     <div
       className="animate-fade-in fixed inset-0 z-50 flex items-end bg-black/45"
@@ -850,7 +1516,7 @@ function AltTextEditor({
     >
       <div className="card animate-slide-up m-2 w-full p-3.5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ink">Describe this image</h3>
+          <h3 className="text-sm font-semibold text-ink">Describe this {noun}</h3>
           <IconButton
             title="Close"
             onClick={onClose}
@@ -859,21 +1525,33 @@ function AltTextEditor({
             <XIcon size={14} />
           </IconButton>
         </div>
-        <img
-          src={image.previewUrl}
-          alt=""
-          className="mt-2.5 max-h-32 w-full rounded-lg bg-surface-2 object-contain"
-        />
+        {mediaKind === 'video' ? (
+          <video
+            src={previewUrl}
+            muted
+            playsInline
+            preload="metadata"
+            className="mt-2.5 max-h-32 w-full rounded-lg bg-black object-contain"
+          />
+        ) : (
+          <img
+            src={previewUrl}
+            alt=""
+            className="mt-2.5 max-h-32 w-full rounded-lg bg-surface-2 object-contain"
+          />
+        )}
         <textarea
           value={value}
-          onChange={(e) => setValue(e.target.value.slice(0, 1000))}
-          placeholder="Alt text helps people using screen readers see your image."
+          onChange={(e) => setValue(e.target.value.slice(0, MAX_ALT_LENGTH))}
+          placeholder={`Alt text helps people using screen readers see your ${noun}.`}
           rows={3}
           autoFocus
           className="input mt-2.5 h-auto resize-none py-2.5 leading-snug"
         />
         <div className="mt-2.5 flex items-center justify-between">
-          <span className="text-[11px] text-ink-faint">{value.length}/1000</span>
+          <span className="text-[11px] text-ink-faint">
+            {value.length}/{MAX_ALT_LENGTH}
+          </span>
           <button type="button" className="btn btn-primary h-8 px-4" onClick={() => onSave(value)}>
             Save
           </button>

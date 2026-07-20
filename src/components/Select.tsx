@@ -183,7 +183,7 @@ export function Select({
         aria-expanded={open}
         className={cx(
           'input flex cursor-pointer items-center justify-between gap-2 pr-2.5 text-left',
-          open && 'border-accent',
+          open && 'border-line-strong',
           triggerClassName,
         )}
       >

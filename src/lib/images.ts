@@ -11,11 +11,15 @@ export interface PreparedImage {
   previewUrl: string;
 }
 
-export const MAX_IMAGES = 4;
+/**
+ * Bluesky's composer cap: up to 4 images post as the classic
+ * `app.bsky.embed.images`; 5-10 promote to the newer `app.bsky.embed.gallery`.
+ */
+export const MAX_IMAGES = 10;
 
-/** Bluesky rejects blobs over ~976 KB; stay safely under. */
-const MAX_BYTES = 950_000;
-const MAX_DIMENSION = 2000;
+/** Image blobs may now be 2 MB (formerly 1 MB); stay safely under. */
+const MAX_BYTES = 1_900_000;
+const MAX_DIMENSION = 4000;
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const JPEG_QUALITY_STEPS = [0.9, 0.8, 0.7, 0.55];
 
@@ -37,7 +41,7 @@ export async function prepareImage(file: File | Blob): Promise<PreparedImage> {
   }
 
   if (file.type === 'image/gif') {
-    throw new Error('GIFs over 950 KB can’t be posted. Try a smaller one.');
+    throw new Error('GIFs over 2 MB can’t be posted as images. Try a smaller one.');
   }
 
   const bitmap = await createImageBitmap(file);
@@ -56,7 +60,7 @@ export async function prepareImage(file: File | Blob): Promise<PreparedImage> {
       return toPrepared(blob, 'image/jpeg', canvas.width, canvas.height);
     }
   }
-  throw new Error('Could not compress this image under Bluesky’s 1 MB limit.');
+  throw new Error('Could not compress this image under Bluesky’s 2 MB limit.');
 }
 
 export function releaseImage(_image: PreparedImage): void {

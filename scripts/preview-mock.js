@@ -8,6 +8,8 @@
   const params = new URLSearchParams(location.search);
   const signedIn = params.get('state') !== 'login';
   const accountCount = Math.max(1, Math.min(3, Number(params.get('accounts') ?? 2)));
+  // ?email=unconfirmed hides the video affordance (Bluesky gates it on this).
+  const emailConfirmed = params.get('email') !== 'unconfirmed';
 
   // Seed the synchronous auth hint so the popup renders instead of redirecting.
   try {
@@ -49,7 +51,10 @@
     },
   ];
 
-  let accounts = ALL_ACCOUNTS.slice(0, accountCount);
+  let accounts = ALL_ACCOUNTS.slice(0, accountCount).map((account) => ({
+    ...account,
+    emailConfirmed,
+  }));
   let activeDid = accounts[0]?.did ?? null;
 
   const SUGGESTIONS = [
@@ -79,7 +84,25 @@
   // --- storage --------------------------------------------------------------
   const changeListeners = [];
   function makeArea(areaName, initial = {}) {
-    const data = { ...initial };
+    // The `local` area persists to localStorage so reload-dependent flows
+    // (draft autosave/restore, saved drafts) are exercisable in the preview.
+    const persistKey = `supersky:mock-${areaName}`;
+    let data = { ...initial };
+    if (areaName === 'local') {
+      try {
+        data = { ...data, ...JSON.parse(localStorage.getItem(persistKey) ?? '{}') };
+      } catch {
+        // Corrupt or unavailable; start fresh.
+      }
+    }
+    const persist = () => {
+      if (areaName !== 'local') return;
+      try {
+        localStorage.setItem(persistKey, JSON.stringify(data));
+      } catch {
+        // Quota exceeded (huge images): previews still work within the session.
+      }
+    };
     const pick = (keys) => {
       if (keys == null) return { ...data };
       const list = typeof keys === 'string' ? [keys] : Array.isArray(keys) ? keys : Object.keys(keys);
@@ -97,6 +120,7 @@
           changes[key] = { oldValue: data[key], newValue: value };
           data[key] = value;
         }
+        persist();
         changeListeners.forEach((fn) => fn(changes, areaName));
       },
       async remove(keys) {
@@ -108,6 +132,7 @@
             delete data[key];
           }
         }
+        persist();
         changeListeners.forEach((fn) => fn(changes, areaName));
       },
     };
@@ -182,6 +207,22 @@
           }),
         );
       }
+      case 'lists:get':
+        await delay(300);
+        return respond([
+          { uri: 'at://did:plc:nova/app.bsky.graph.list/friends', name: 'Close Friends' },
+          { uri: 'at://did:plc:nova/app.bsky.graph.list/astro', name: 'Astronomy Pals' },
+        ]);
+      case 'video:auth':
+        // Simulate the real service refusing an unconfirmed-email account, so
+        // the friendly toast wording is exercisable in the preview. Flip the
+        // condition to return a token to demo the upload/processing UI instead.
+        await delay(400);
+        if (params.get('video') === 'ok') return respond({ token: 'preview-token' });
+        return {
+          ok: false,
+          error: 'Bluesky requires a confirmed email address before you can upload videos. Confirm your email in the Bluesky app under Settings → Account, then try again.',
+        };
       case 'notif:refresh':
         await delay(250);
         return respond({ count: 3 });

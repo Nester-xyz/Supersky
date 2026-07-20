@@ -85,7 +85,7 @@
     </svg>
     <h1>Super<span class="sky">sky</span> Privacy Policy</h1>
     <p class="tag">Your corner of the sky, one click away.</p>
-    <p class="updated">Last updated: July 18, 2026</p>
+    <p class="updated">Last updated: July 21, 2026</p>
   </div>
 </header>
 
@@ -120,9 +120,19 @@
       <td data-label="Where it's stored / sent">Fetched from your PDS; a snapshot is cached locally in your browser.</td>
     </tr>
     <tr>
-      <td>Post content you create (text, images, alt text, language)</td>
+      <td>Post content you create (text, images, GIFs, alt text, language, interaction settings)</td>
       <td data-label="Why it's handled">This is the post you choose to publish. It is uploaded to Bluesky when you press <em>Post</em>.</td>
-      <td data-label="Where it's stored / sent">Sent to your PDS to publish. Unsent drafts are saved locally in your browser and cleared once posted.</td>
+      <td data-label="Where it's stored / sent">Sent to your PDS to publish. Unsent drafts (including any attached images) are saved locally in your browser and cleared once posted or deleted.</td>
+    </tr>
+    <tr>
+      <td>Videos you attach</td>
+      <td data-label="Why it's handled">Bluesky videos are processed by Bluesky's own video service before they can appear in a post.</td>
+      <td data-label="Where it's stored / sent">Uploaded to <code>video.bsky.app</code> (a Bluesky service) when you attach one, using a short-lived token from your PDS. Videos are not kept in local drafts.</td>
+    </tr>
+    <tr>
+      <td>GIF search terms</td>
+      <td data-label="Why it's handled">Typing in the GIF picker searches Bluesky's GIF service so you can attach an animated GIF.</td>
+      <td data-label="Where it's stored / sent">Sent to <code>gifs.bsky.app</code> (Bluesky's GIF proxy, backed by Klipy). Search terms are not stored.</td>
     </tr>
     <tr>
       <td>Current page information (URL, title, selected text)</td>
@@ -149,6 +159,8 @@
   <li><strong>Your Personal Data Server (PDS):</strong> <code>bsky.social</code> by default, or another server if you enter one. Used to sign in, publish posts, and read your notifications and profile.</li>
   <li><strong><code>cardyb.bsky.app</code>:</strong> Bluesky's link card service. It fetches the title, description, and thumbnail for links you include in a post.</li>
   <li><strong><code>cdn.bsky.app</code>:</strong> Bluesky's content delivery network. It serves the author avatars shown inside desktop notification banners.</li>
+  <li><strong><code>gifs.bsky.app</code></strong> (and its media subdomains): Bluesky's GIF search proxy, backed by the Klipy GIF library. Used only when you open the GIF picker.</li>
+  <li><strong><code>video.bsky.app</code>:</strong> Bluesky's video processing service. Videos you attach are uploaded there to be transcoded before posting.</li>
 </ul>
 <p>These interactions fall under Bluesky's own terms and privacy policy. Supersky runs no backend, receives none of your data, and loads no third-party code.</p>
 
@@ -169,7 +181,7 @@
 </ul>
 
 <h2>Permissions</h2>
-<p>Supersky requests only what its features need: <code>storage</code> (save settings, drafts, and sessions locally), <code>alarms</code> (check your unread notification count in the background), <code>contextMenus</code> (the right-click "Share on Bluesky" items), <code>activeTab</code> (read the current page's URL and title when you share it), <code>notifications</code> (desktop banners for new activity), and host access to <code>cardyb.bsky.app</code> and <code>cdn.bsky.app</code> (Bluesky's link preview and image services). There is no blanket access to the pages you visit; the extension only touches a page at the moment you share it.</p>
+<p>Supersky requests only what its features need: <code>storage</code> and <code>unlimitedStorage</code> (save settings, drafts — including their images — and sessions locally), <code>alarms</code> (check your unread notification count in the background), <code>contextMenus</code> (the right-click "Share on Bluesky" items), <code>activeTab</code> (read the current page's URL and title when you share it), <code>notifications</code> (desktop banners for new activity), and host access to <code>cardyb.bsky.app</code>, <code>cdn.bsky.app</code>, <code>gifs.bsky.app</code>, and <code>video.bsky.app</code> (Bluesky's link preview, image, GIF, and video services). There is no blanket access to the pages you visit; the extension only touches a page at the moment you share it.</p>
 
 <h2>Children's privacy</h2>
 <p>Supersky is not aimed at children under 13 (or the minimum age of digital consent where you live) and does not knowingly collect their data. Bluesky account eligibility is governed by Bluesky's own terms.</p>

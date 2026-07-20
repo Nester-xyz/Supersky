@@ -251,3 +251,74 @@ export const BellIcon = createIcon(
     <path d="M10.3 20.6a2 2 0 0 0 3.4 0" />
   </>,
 );
+
+export const GifIcon = createIcon(
+  'GifIcon',
+  <>
+    <rect x="2.5" y="5" width="19" height="14" rx="3" />
+    <path d="M9.5 10h-1.75a1.75 1.75 0 0 0-1.75 1.75v.5A1.75 1.75 0 0 0 7.75 14H9.5v-2.25H8.4" />
+    <path d="M12 10v4" />
+    <path d="M14.75 14v-4h3.25" />
+    <path d="M14.75 12.15h2.5" />
+  </>,
+);
+
+export const VideoIcon = createIcon(
+  'VideoIcon',
+  <>
+    <rect x="2.5" y="6" width="13" height="12" rx="2.5" />
+    <path d="m15.5 10.8 5-3.3v9l-5-3.3" />
+  </>,
+);
+
+export const TrashIcon = createIcon(
+  'TrashIcon',
+  <>
+    <path d="M3.5 6h17" />
+    <path d="M8.5 6V4.5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2V6" />
+    <path d="M18.5 6v13a2.5 2.5 0 0 1-2.5 2.5H8A2.5 2.5 0 0 1 5.5 19V6" />
+    <path d="M10 10.5v6" />
+    <path d="M14 10.5v6" />
+  </>,
+);
+
+export const DraftsIcon = createIcon(
+  'DraftsIcon',
+  <>
+    <path d="M14.5 2.5H6.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7.5Z" />
+    <path d="M14.5 2.5v5h5" />
+    <path d="M9 13h6" />
+    <path d="M9 17h4" />
+  </>,
+);
+
+export const UsersIcon = createIcon(
+  'UsersIcon',
+  <>
+    <path d="M15.5 21v-2a4 4 0 0 0-4-4h-5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7.5" r="3.75" />
+    <path d="M21.5 21v-2a4 4 0 0 0-3-3.85" />
+    <path d="M15.5 3.9a3.75 3.75 0 0 1 0 7.2" />
+  </>,
+);
+
+export const ReplyBubbleIcon = createIcon(
+  'ReplyBubbleIcon',
+  <path d="M21 11.5a8.38 8.38 0 0 1-8.4 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 8.4-8.4h.5a8.48 8.48 0 0 1 8.1 8.1Z" />,
+);
+
+export const QuoteIcon = createIcon(
+  'QuoteIcon',
+  <>
+    <path d="M9.5 5.5a5 5 0 0 0-5 5v7a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1H7a3.5 3.5 0 0 1 2.5-3.35Z" />
+    <path d="M20 5.5a5 5 0 0 0-5 5v7a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1h-2.5A3.5 3.5 0 0 1 20 9.15Z" />
+  </>,
+);
+
+export const SearchIcon = createIcon(
+  'SearchIcon',
+  <>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20.5 20.5-4.5-4.5" />
+  </>,
+);

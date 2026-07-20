@@ -1,3 +1,6 @@
+import type { AttachedGif } from './gifs';
+import type { InteractionSettings } from './interaction';
+
 /** A lightweight snapshot of the signed-in account, safe to cache and render. */
 export interface AccountSnapshot {
   did: string;
@@ -6,6 +9,12 @@ export interface AccountSnapshot {
   avatar?: string;
   /** PDS base URL this account is signed in against, e.g. https://bsky.social */
   service: string;
+  /**
+   * Whether the account's email is confirmed. Bluesky requires this to upload
+   * videos, so the composer hides the video affordance when it's explicitly
+   * false. Undefined means not yet known (treated as allowed).
+   */
+  emailConfirmed?: boolean;
 }
 
 export type AuthState =
@@ -53,16 +62,40 @@ export interface ComposerImagePayload {
   height: number;
 }
 
+/**
+ * A processed video ready to embed: the blob JSON returned by the video
+ * service's completed job, plus presentation metadata gathered in the popup.
+ */
+export interface ComposerVideoPayload {
+  /** JSON blob ref from app.bsky.video.getJobStatus (opaque to the popup). */
+  blob: unknown;
+  alt: string;
+  width: number;
+  height: number;
+  /** DID whose upload session produced the blob; the post must be by it. */
+  did: string;
+}
+
 export interface PublishRequest {
   text: string;
   langs?: string[];
   images: ComposerImagePayload[];
+  video?: ComposerVideoPayload | null;
+  gif?: AttachedGif | null;
   card: LinkCardData | null;
+  interaction?: InteractionSettings | null;
   /**
    * Accounts (by DID) to publish this draft as. Omitted or empty means the
    * active account only; more than one fans the same draft out to each.
    */
   dids?: string[];
+}
+
+/** A user list surfaced in the interaction-settings sheet. */
+export interface ListSuggestion {
+  uri: string;
+  name: string;
+  avatar?: string;
 }
 
 export interface PublishResult {

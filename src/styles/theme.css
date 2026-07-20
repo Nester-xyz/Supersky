@@ -342,8 +342,10 @@ body {
   .input {
     @apply h-10 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors duration-150 outline-none placeholder:text-ink-faint;
   }
+  /* A stronger neutral, not the accent: a glowing blue ring on every focused
+     field made the whole surface feel outlined. */
   .input:focus {
-    border-color: var(--ss-accent);
+    border-color: var(--ss-line-strong);
   }
 
   .card {

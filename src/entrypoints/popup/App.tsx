@@ -58,7 +58,20 @@ export default function App() {
           <LogoMark size={26} />
           <Wordmark />
         </div>
-        {account && <AccountSwitcher account={account} accounts={accounts} />}
+        {account && (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              title="Open drafts"
+              // The composer owns the drafts sheet; the header just knocks.
+              onClick={() => window.dispatchEvent(new Event('supersky:open-drafts'))}
+              className="flex h-7 cursor-pointer items-center rounded-full px-2.5 text-[13px] font-semibold text-accent transition-colors hover:bg-accent-soft"
+            >
+              Drafts
+            </button>
+            <AccountSwitcher account={account} accounts={accounts} />
+          </div>
+        )}
       </header>
 
       <main className="flex flex-1 flex-col">
