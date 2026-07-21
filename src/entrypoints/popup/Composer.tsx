@@ -23,6 +23,8 @@ import {
   GlobeIcon,
   ImageIcon,
   LinkIcon,
+  PlusIcon,
+  ReplyBubbleIcon,
   UsersIcon,
   XIcon,
 } from '@/components/icons';
@@ -37,6 +39,7 @@ import {
   saveAutosaveMeta,
   type SavedDraft,
 } from '@/lib/draft';
+import { base64ToBytes } from '@/lib/encoding';
 import { toErrorMessage } from '@/lib/errors';
 import type { AttachedGif } from '@/lib/gifs';
 import {
@@ -62,6 +65,7 @@ import {
   graphemeLength,
   insertAtSelection,
   replaceRange,
+  splitIntoThread,
   truncateToGraphemes,
 } from '@/lib/text';
 import { domainOf, extractFirstUrl } from '@/lib/urls';
@@ -74,7 +78,12 @@ import {
   uploadVideoFile,
   type PreparedVideo,
 } from '@/lib/video';
-import type { AccountSnapshot, LinkCardData } from '@/lib/types';
+import {
+  MAX_THREAD_POSTS,
+  type AccountSnapshot,
+  type ComposerImagePayload,
+  type LinkCardData,
+} from '@/lib/types';
 
 interface ToastState {
   kind: 'success' | 'error';
@@ -83,11 +92,31 @@ interface ToastState {
 }
 
 type AltTarget =
-  | { kind: 'image'; image: PreparedImage }
+  | { kind: 'image'; image: PreparedImage; segmentId?: string }
   | { kind: 'gif' }
   | { kind: 'video' };
 
 type SheetKind = 'none' | 'interaction' | 'drafts';
+
+function toImagePayload({ base64, mime, alt, width, height }: PreparedImage): ComposerImagePayload {
+  return { base64, mime, alt, width, height };
+}
+
+interface ThreadSegment {
+  id: string;
+  text: string;
+  /** Each follow-up post can carry its own images. */
+  images: PreparedImage[];
+}
+
+/** The notification post a reply composes under. */
+interface ReplyContext {
+  uri: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+  snippet: string;
+}
 
 /**
  * A Bluesky post carries a single embed, so photos and a video can never share
@@ -96,10 +125,6 @@ type SheetKind = 'none' | 'interaction' | 'drafts';
  */
 const PHOTOS_AND_VIDEO_MESSAGE =
   'Bluesky can’t put photos and a video in the same post. Post them separately.';
-
-/** Bluesky blocks video uploads until the account's email is confirmed. */
-const VIDEO_EMAIL_MESSAGE =
-  'Confirm your email address on Bluesky to upload videos. You can still post photos and GIFs.';
 
 export function Composer({
   account,
@@ -110,6 +135,12 @@ export function Composer({
 }) {
   const [booted, setBooted] = useState(false);
   const [text, setText] = useState('');
+  const [extraPosts, setExtraPosts] = useState<ThreadSegment[]>([]);
+  /** Which thread post the footer's media button feeds (null = root). */
+  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  /** A just-added thread post that should grab the cursor on mount. */
+  const [focusSegmentId, setFocusSegmentId] = useState<string | null>(null);
+  const [replyCtx, setReplyCtx] = useState<ReplyContext | null>(null);
   const [images, setImages] = useState<PreparedImage[]>([]);
   const [video, setVideo] = useState<PreparedVideo | null>(null);
   const [videoJob, setVideoJob] = useState<VideoJob | null>(null);
@@ -129,6 +160,12 @@ export function Composer({
   // the active account changes from the header switcher.
   const [targets, setTargets] = useState<string[]>([account.did]);
 
+  // Detached-window mode (the fallback when the toolbar popup can't open).
+  const isWindowMode = useMemo(
+    () => new URLSearchParams(window.location.search).get('mode') === 'window',
+    [],
+  );
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dismissedUrlRef = useRef<string | null>(null);
@@ -140,15 +177,12 @@ export function Composer({
   const videoOwnerRef = useRef<string | null>(null);
   const imagesRef = useRef(images);
   imagesRef.current = images;
+  const extraPostsRef = useRef(extraPosts);
+  extraPostsRef.current = extraPosts;
   const videoRef = useRef(video);
   videoRef.current = video;
   const gifRef = useRef(gif);
   gifRef.current = gif;
-  // Video upload requires a confirmed email; only an explicit false hides it, so
-  // a not-yet-known status still offers it (attach-time check is the backstop).
-  const canUploadVideo = account.emailConfirmed !== false;
-  const canUploadVideoRef = useRef(canUploadVideo);
-  canUploadVideoRef.current = canUploadVideo;
 
   // Replace the "@partial" range with the chosen handle; facets are resolved
   // for real at publish time, so we only need the plain text here.
@@ -185,14 +219,25 @@ export function Composer({
     void (async () => {
       const settings = await loadSettings();
       const share = await takePendingShare();
-      // A cross-post hand-off is a deliberate fresh draft and takes the
-      // composer wholesale; otherwise everything from the last session comes
-      // back, since outside clicks close the popup without warning.
+      // A cross-post hand-off or a banner reply is a deliberate fresh draft
+      // and takes the composer wholesale; otherwise everything from the last
+      // session comes back, since outside clicks close the popup without
+      // warning.
       const crosspost = share?.kind === 'crosspost' ? share : null;
-      const restored = crosspost ? null : await loadAutosave();
+      const reply = share?.kind === 'reply' && share.replyTo ? share : null;
+      const restored = crosspost || reply ? null : await loadAutosave();
       if (!mounted) return;
       setLang(restored?.lang ?? settings.defaultLang);
       setAutoCard(settings.autoLinkCard);
+      if (reply) {
+        setReplyCtx({
+          uri: reply.replyTo ?? '',
+          handle: reply.replyToHandle ?? '',
+          displayName: reply.replyToDisplayName,
+          avatar: reply.replyToAvatar,
+          snippet: reply.replyToText ?? '',
+        });
+      }
       if (crosspost?.images?.length) {
         setImages(
           crosspost.images.map((image) => ({
@@ -201,13 +246,57 @@ export function Composer({
             previewUrl: `data:${image.mime};base64,${image.base64}`,
           })),
         );
-      } else if (restored) {
+      }
+      if (crosspost?.extraPosts?.length) {
+        setExtraPosts(
+          crosspost.extraPosts.map((post) => ({
+            id: crypto.randomUUID(),
+            text: post.text,
+            images: (post.images ?? []).map((image) => ({
+              id: crypto.randomUUID(),
+              ...image,
+              previewUrl: `data:${image.mime};base64,${image.base64}`,
+            })),
+          })),
+        );
+      }
+      // A handed-off video was stashed in storage.local; reconstruct the file
+      // and feed it through the normal attach path, then clear the stash.
+      if (crosspost?.videoKey) {
+        void (async () => {
+          try {
+            const stored = await browser.storage.local.get(crosspost.videoKey!);
+            const entry = stored[crosspost.videoKey!] as
+              | { base64: string; mime: string }
+              | undefined;
+            await browser.storage.local.remove(crosspost.videoKey!);
+            if (!entry) return;
+            const bytes = base64ToBytes(entry.base64);
+            const file = new File([bytes.buffer as ArrayBuffer], 'handoff-video', {
+              type: entry.mime,
+            });
+            await addFilesRef.current?.([file]);
+          } catch {
+            // The video just doesn't carry over; text and photos still did.
+          }
+        })();
+      }
+      if (!crosspost && restored) {
         if (restored.images.length > 0) {
           setImages(
             restored.images.map((image) => ({
               id: crypto.randomUUID(),
               ...image,
               previewUrl: `data:${image.mime};base64,${image.base64}`,
+            })),
+          );
+        }
+        if (restored.extraPosts.length > 0) {
+          setExtraPosts(
+            restored.extraPosts.map((value) => ({
+              id: crypto.randomUUID(),
+              text: value,
+              images: [],
             })),
           );
         }
@@ -254,12 +343,14 @@ export function Composer({
   }, [booted]);
 
   // -- autosize textarea -----------------------------------------------------
+  // Re-measures when reply/thread mode flips too, since the min-height floor
+  // changes with it and a stale inline height would leave dead space.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 280)}px`;
-  }, [text]);
+  }, [text, replyCtx, extraPosts.length]);
 
   // -- draft autosave ---------------------------------------------------------
   useEffect(() => {
@@ -268,6 +359,7 @@ export function Composer({
       () =>
         void saveAutosaveMeta({
           text,
+          extraPosts: extraPosts.map((segment) => segment.text).filter((t) => t.trim()),
           lang,
           gif,
           interaction: isDefaultInteraction(interaction) ? null : interaction,
@@ -275,7 +367,7 @@ export function Composer({
       400,
     );
     return () => clearTimeout(timer);
-  }, [text, lang, gif, interaction, booted]);
+  }, [text, extraPosts, lang, gif, interaction, booted]);
 
   // Attachments change discretely, so they persist immediately on change.
   useEffect(() => {
@@ -293,12 +385,21 @@ export function Composer({
     return () => window.removeEventListener('supersky:open-drafts', open);
   }, []);
 
+  // Reply mode tells the page shell to hug its content instead of holding the
+  // full composer height.
+  useEffect(() => {
+    document.documentElement.classList.toggle('mode-reply', Boolean(replyCtx));
+    return () => document.documentElement.classList.remove('mode-reply');
+  }, [replyCtx]);
+
   // A draft loaded from the shelf is only consumed when it's actually posted;
   // clearing the composer by hand breaks that link so an unrelated later post
   // never deletes it.
   useEffect(() => {
-    if (!text && images.length === 0 && !gif && !video) loadedDraftRef.current = null;
-  }, [text, images.length, gif, video]);
+    if (!text && extraPosts.length === 0 && images.length === 0 && !gif && !video) {
+      loadedDraftRef.current = null;
+    }
+  }, [text, extraPosts.length, images.length, gif, video]);
 
   // -- link card detection ----------------------------------------------------
   const detectedUrl = useMemo(() => extractFirstUrl(text), [text]);
@@ -331,22 +432,17 @@ export function Composer({
   }, [detectedUrl, autoCard, images.length, gif, video, booted]);
 
   // -- media: images + video --------------------------------------------------
+  const addFilesRef = useRef<((files: Iterable<File>) => void) | null>(null);
+
   const addFiles = useCallback(async (files: Iterable<File>) => {
     const list = Array.from(files);
     if (list.length === 0) return;
     let videoFiles = list.filter(isVideoFile);
     let imageFiles = list.filter((file) => !isVideoFile(file));
 
-    // Video needs a confirmed email on the account. If it isn't allowed, drop
-    // any video from the selection (keeping photos), or explain when it's the
-    // only thing chosen.
-    if (videoFiles.length > 0 && !canUploadVideoRef.current) {
-      if (imageFiles.length === 0) {
-        setToast({ kind: 'error', message: VIDEO_EMAIL_MESSAGE });
-        return;
-      }
-      videoFiles = [];
-    }
+    // Whether this account may actually upload video is settled by the server
+    // when the upload runs (it depends on the account's confirmed email), so we
+    // always accept the pick here and surface any refusal on the attachment.
 
     // A single drop that mixes photos and a video can't all go on one post, so
     // keep whichever type came first in the selection and drop the other.
@@ -410,6 +506,7 @@ export function Composer({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  addFilesRef.current = addFiles;
 
   function removeImage(image: PreparedImage) {
     releaseImage(image);
@@ -478,11 +575,9 @@ export function Composer({
         if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
           return;
         }
-        const message = toErrorMessage(err);
-        setVideoJob({ phase: 'error', pct: null, error: message });
-        // Surface the reason immediately (e.g. "confirm your email"), not just
-        // the terse "Upload failed" chip, so the user knows what to fix.
-        setToast({ kind: 'error', message });
+        // The dismissible banner under the video carries the reason (e.g.
+        // "confirm your email") and the retry/close controls.
+        setVideoJob({ phase: 'error', pct: null, error: toErrorMessage(err) });
       }
     })();
   }
@@ -502,7 +597,7 @@ export function Composer({
       removeVideo();
       setToast({
         kind: 'error',
-        message: 'Video removed — uploads are tied to the account that started them.',
+        message: 'Video removed. Uploads are tied to the account that started them.',
       });
     }
   }, [account.did, removeVideo]);
@@ -520,6 +615,27 @@ export function Composer({
     setCardLoading(false);
   }
 
+  /**
+   * The footer's one media button feeds whichever post was last focused:
+   * the root gets the full treatment (photos or a video), follow-up posts
+   * take photos only.
+   */
+  function handlePickedFiles(files: FileList) {
+    const targetId = activeSegmentId;
+    const target = targetId
+      ? extraPostsRef.current.find((segment) => segment.id === targetId)
+      : undefined;
+    if (!target) {
+      void addFiles(files);
+      return;
+    }
+    const imageFiles = [...files].filter((file) => !isVideoFile(file));
+    if (imageFiles.length < files.length) {
+      setToast({ kind: 'error', message: 'Videos can only go on the first post.' });
+    }
+    if (imageFiles.length > 0) void addSegmentImages(target.id, imageFiles);
+  }
+
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const files = event.clipboardData?.files;
     if (files && files.length > 0) {
@@ -534,24 +650,112 @@ export function Composer({
     if (event.dataTransfer?.files?.length) void addFiles(event.dataTransfer.files);
   }
 
+  // -- thread segments --------------------------------------------------------
+  function addThreadPost() {
+    if (extraPosts.length + 1 >= MAX_THREAD_POSTS) return;
+    const segment: ThreadSegment = { id: crypto.randomUUID(), text: '', images: [] };
+    setExtraPosts((prev) => [...prev, segment]);
+    // Make the new post the active one and put the cursor in it.
+    setActiveSegmentId(segment.id);
+    setFocusSegmentId(segment.id);
+  }
+
+  function updateThreadPost(id: string, value: string) {
+    setExtraPosts((prev) =>
+      prev.map((segment) => (segment.id === id ? { ...segment, text: value } : segment)),
+    );
+  }
+
+  function removeThreadPost(id: string) {
+    setActiveSegmentId((prev) => (prev === id ? null : prev));
+    setExtraPosts((prev) => {
+      prev.find((segment) => segment.id === id)?.images.forEach(releaseImage);
+      return prev.filter((segment) => segment.id !== id);
+    });
+  }
+
+  async function addSegmentImages(id: string, files: Iterable<File>) {
+    const segment = extraPostsRef.current.find((item) => item.id === id);
+    if (!segment) return;
+    const room = MAX_IMAGES - segment.images.length;
+    if (room <= 0) {
+      setToast({ kind: 'error', message: `Each post can carry up to ${MAX_IMAGES} images.` });
+      return;
+    }
+    for (const file of [...files].slice(0, room)) {
+      try {
+        const prepared = await prepareImage(file);
+        setExtraPosts((prev) =>
+          prev.map((item) =>
+            item.id === id && item.images.length < MAX_IMAGES
+              ? { ...item, images: [...item.images, prepared] }
+              : item,
+          ),
+        );
+      } catch (err) {
+        setToast({ kind: 'error', message: toErrorMessage(err) });
+      }
+    }
+  }
+
+  function removeSegmentImage(id: string, image: PreparedImage) {
+    releaseImage(image);
+    setExtraPosts((prev) =>
+      prev.map((segment) =>
+        segment.id === id
+          ? { ...segment, images: segment.images.filter((item) => item.id !== image.id) }
+          : segment,
+      ),
+    );
+  }
+
+  /** Split the over-limit root text into a thread at natural boundaries. */
+  function splitRootIntoThread() {
+    const parts = splitIntoThread(text);
+    if (parts.length <= 1) return;
+    const capped = parts.slice(0, MAX_THREAD_POSTS);
+    if (parts.length > MAX_THREAD_POSTS) {
+      // Nothing is thrown away: the tail rejoins the last post, whose counter
+      // goes red until it's shortened.
+      capped[MAX_THREAD_POSTS - 1] = parts.slice(MAX_THREAD_POSTS - 1).join('\n\n');
+      setToast({
+        kind: 'error',
+        message: `Threads can have up to ${MAX_THREAD_POSTS} posts; trim the last one to fit.`,
+      });
+    }
+    setText(capped[0] ?? '');
+    setExtraPosts(
+      capped.slice(1).map((value) => ({ id: crypto.randomUUID(), text: value, images: [] })),
+    );
+  }
+
   // -- publish ----------------------------------------------------------------
   const graphemes = useMemo(() => graphemeLength(text), [text]);
   const remaining = MAX_GRAPHEMES - graphemes;
   const hasContent = text.trim().length > 0 || images.length > 0 || Boolean(gif) || Boolean(video);
+  const extrasValid = extraPosts.every(
+    (segment) =>
+      (segment.text.trim().length > 0 || segment.images.length > 0) &&
+      graphemeLength(segment.text) <= MAX_GRAPHEMES,
+  );
   // An attached video must finish uploading/processing before the post can go
   // out (its blob only exists once the job completes). Until then, Post is off.
   const videoNotReady = Boolean(video) && videoJob?.phase !== 'ready';
-  const canPost = !posting && remaining >= 0 && hasContent && !videoNotReady;
+  const canPost = !posting && remaining >= 0 && hasContent && extrasValid && !videoNotReady;
 
-  const composerDirty = hasContent;
+  const composerDirty = hasContent || extraPosts.length > 0;
 
   function resetComposer() {
     imagesRef.current.forEach(releaseImage);
+    extraPostsRef.current.forEach((segment) => segment.images.forEach(releaseImage));
     setImages([]);
     removeVideo();
     setGif(null);
     setInteraction(defaultInteraction());
     setText('');
+    setExtraPosts([]);
+    setActiveSegmentId(null);
+    setReplyCtx(null);
     selectionRef.current = { start: 0, end: 0 };
     mentions.dismiss();
     setCard(null);
@@ -566,11 +770,19 @@ export function Composer({
     setToast(null);
     const requested = targets.length || 1;
     const loadedDraftId = loadedDraftRef.current;
+    const wasReply = Boolean(replyCtx);
     const videoPayload =
       video && videoJob?.phase === 'ready' ? { ...videoJob.payload, alt: video.alt } : null;
     try {
       const results = await sendMessage('post:publish', {
         text,
+        extraPosts: extraPosts
+          .map((segment) => ({
+            text: segment.text,
+            images: segment.images.map(toImagePayload),
+          }))
+          .filter((post) => post.text.trim() || post.images.length > 0),
+        replyTo: replyCtx?.uri ?? null,
         langs: lang ? [lang] : undefined,
         images: images.map(({ base64, mime, alt, width, height }) => ({
           base64,
@@ -582,12 +794,19 @@ export function Composer({
         video: videoPayload,
         gif,
         card: images.length === 0 && !gif && !video ? card : null,
-        interaction: isDefaultInteraction(interaction) ? null : interaction,
+        // Threadgates belong to thread roots, so replies carry no settings.
+        interaction: replyCtx || isDefaultInteraction(interaction) ? null : interaction,
         dids: targets,
       });
       resetComposer();
       await clearDraft();
       if (loadedDraftId) await deleteSavedDraft(loadedDraftId);
+      // A reply opened in its own window has done its one job; close it
+      // quietly instead of leaving an empty composer with a toast.
+      if (wasReply && isWindowMode) {
+        window.close();
+        return;
+      }
       const posted = results.length;
       const allOk = posted >= requested;
       setToast({
@@ -649,11 +868,18 @@ export function Composer({
   }
 
   // -- drafts -----------------------------------------------------------------
-  const canSaveDraft = text.trim().length > 0 || images.length > 0 || Boolean(gif);
+  const canSaveDraft =
+    text.trim().length > 0 || extraPosts.length > 0 || images.length > 0 || Boolean(gif);
 
   async function saveCurrentDraft() {
     await addSavedDraft({
       text,
+      extraPosts: extraPosts
+        .map((segment) => ({
+          text: segment.text,
+          images: segment.images.map(toImagePayload),
+        }))
+        .filter((post) => post.text.trim() || post.images.length > 0),
       lang,
       images: images.map(({ base64, mime, alt, width, height }) => ({
         base64,
@@ -673,12 +899,28 @@ export function Composer({
   function openSavedDraft(draft: SavedDraft) {
     imagesRef.current.forEach(releaseImage);
     removeVideo();
+    setReplyCtx(null);
     setImages(
       draft.images.map((image) => ({
         id: crypto.randomUUID(),
         ...image,
         previewUrl: `data:${image.mime};base64,${image.base64}`,
       })),
+    );
+    setExtraPosts(
+      (draft.extraPosts ?? []).map((post) => {
+        // Dev-era drafts stored plain strings; both shapes restore cleanly.
+        const payload = typeof post === 'string' ? { text: post, images: [] } : post;
+        return {
+          id: crypto.randomUUID(),
+          text: payload.text,
+          images: (payload.images ?? []).map((image) => ({
+            id: crypto.randomUUID(),
+            ...image,
+            previewUrl: `data:${image.mime};base64,${image.base64}`,
+          })),
+        };
+      }),
     );
     setGif(draft.gif ?? null);
     setInteraction(draft.interaction ?? defaultInteraction());
@@ -699,14 +941,118 @@ export function Composer({
   }
 
   const showShareChip =
-    currentTab !== null && text === '' && images.length === 0 && !gif && !video;
+    currentTab !== null && text === '' && images.length === 0 && !gif && !video && !replyCtx;
   const firstName = (account.displayName ?? account.handle).split(/\s+/)[0] ?? '';
   const interactionLimited = !isDefaultInteraction(interaction);
-  const mediaButtonDisabled = images.length >= MAX_IMAGES || Boolean(video) || Boolean(gif);
-  // Any attachment preview shares one full-width row below the composer, so it
-  // spans the popup instead of being indented under the avatar column.
+  const activeSegment = activeSegmentId
+    ? extraPosts.find((segment) => segment.id === activeSegmentId)
+    : undefined;
+  const mediaButtonDisabled = activeSegment
+    ? activeSegment.images.length >= MAX_IMAGES
+    : images.length >= MAX_IMAGES || Boolean(video) || Boolean(gif);
   const showLinkPreview = images.length === 0 && !gif && !video && (cardLoading || Boolean(card));
   const hasPreview = images.length > 0 || Boolean(gif) || Boolean(video) || showLinkPreview;
+  const isThread = extraPosts.length > 0;
+
+  // The root post's media (images, GIF, video, or link card). In a thread it
+  // renders inline under the root text so it's clearly that post's; on a lone
+  // post it drops to the full-width row just above the interaction bar.
+  const rootMedia = (
+    <>
+      {images.length > 0 &&
+        // In a thread, the root's images shrink to the same compact tiles as
+        // the follow-up posts once the root loses focus, so no one post's
+        // media dominates; the focused root still gets the roomy strip.
+        (isThread && activeSegmentId !== null ? (
+          <div className="flex gap-1.5 overflow-x-auto pb-1" role="list" aria-label="Attached images">
+            {images.map((image) => (
+              <div
+                key={image.id}
+                role="listitem"
+                className="group relative size-16 shrink-0 overflow-hidden rounded-lg border border-line bg-surface-2"
+              >
+                <img
+                  src={image.previewUrl}
+                  alt={image.alt || 'Attached image'}
+                  className="h-full w-full object-cover"
+                />
+                <AltBadge
+                  image={image}
+                  onEditAlt={(img) => setAltTarget({ kind: 'image', image: img })}
+                  compact
+                />
+                <RemoveBadge label="Remove image" onClick={() => removeImage(image)} compact />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <MediaStrip
+            images={images}
+            onRemove={removeImage}
+            onEditAlt={(image) => setAltTarget({ kind: 'image', image })}
+          />
+        ))}
+      {gif && (
+        <GifAttachment
+          gif={gif}
+          onEditAlt={() => setAltTarget({ kind: 'gif' })}
+          onRemove={() => setGif(null)}
+        />
+      )}
+      {video && (
+        <VideoAttachment
+          video={video}
+          onEditAlt={() => setAltTarget({ kind: 'video' })}
+          onRemove={removeVideo}
+        />
+      )}
+      {video && videoJob?.phase === 'error' && (
+        <div className="animate-fade-in mb-2 flex items-start gap-2 rounded-xl border border-danger/40 bg-danger-soft px-3 py-2.5">
+          <AlertCircleIcon size={15} className="mt-px shrink-0 text-danger" />
+          <p className="min-w-0 flex-1 text-xs leading-snug text-danger">{videoJob.error}</p>
+          <button
+            type="button"
+            onClick={() => startVideoUpload(video, videoOwnerRef.current ?? account.did)}
+            className="h-6 shrink-0 cursor-pointer rounded-md px-2 text-xs font-semibold text-danger transition-colors hover:bg-danger/10"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={removeVideo}
+            aria-label="Dismiss"
+            title="Dismiss"
+            className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-danger/70 transition-colors hover:bg-danger/10 hover:text-danger"
+          >
+            <XIcon size={13} />
+          </button>
+        </div>
+      )}
+      {showLinkPreview && cardLoading && (
+        <div className="flex h-[76px] items-center justify-center gap-2 rounded-xl border border-line text-xs text-ink-faint">
+          <Spinner size={13} />
+          Fetching link preview…
+        </div>
+      )}
+      {showLinkPreview && !cardLoading && card && (
+        <CardPreview
+          card={card}
+          onDismiss={() => {
+            // Closing the preview resets the draft: card AND the typed text
+            // (usually just the pasted URL). Nothing stays "dismissed":
+            // pasting a URL again fetches a fresh preview.
+            dismissedUrlRef.current = null;
+            requestedUrlRef.current = null;
+            setCard(null);
+            setText('');
+            selectionRef.current = { start: 0, end: 0 };
+            mentions.dismiss();
+            textareaRef.current?.focus();
+          }}
+        />
+      )}
+    </>
+  );
 
   return (
     <div
@@ -724,7 +1070,60 @@ export function Composer({
           dragOver && 'bg-accent-soft',
         )}
       >
-        <div className="flex gap-3">
+        {replyCtx && (
+          <div className="relative flex gap-3 pb-4">
+            {/* Thread line from the parent's avatar down to the reply row. */}
+            <div
+              aria-hidden="true"
+              className="absolute top-[42px] bottom-0 left-[19px] w-px bg-line"
+            />
+            {replyCtx.avatar ? (
+              <img
+                src={replyCtx.avatar}
+                alt=""
+                className="size-[38px] shrink-0 rounded-full border border-line object-cover"
+              />
+            ) : (
+              <span className="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-[15px] font-semibold text-white">
+                {(replyCtx.handle[0] ?? '?').toUpperCase()}
+              </span>
+            )}
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex items-start gap-1">
+                <p className="min-w-0 flex-1 truncate text-[13px] leading-snug">
+                  {replyCtx.displayName && (
+                    <span className="font-semibold text-ink">{replyCtx.displayName} </span>
+                  )}
+                  <span className="text-ink-muted">@{replyCtx.handle}</span>
+                </p>
+                <IconButton
+                  title="Cancel reply (write a new post instead)"
+                  onClick={() => setReplyCtx(null)}
+                  className="-mt-1 size-6 shrink-0"
+                >
+                  <XIcon size={12} />
+                </IconButton>
+              </div>
+              {replyCtx.snippet && (
+                <p className="mt-0.5 line-clamp-4 text-[14px] leading-snug whitespace-pre-wrap text-ink">
+                  {replyCtx.snippet}
+                </p>
+              )}
+              <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-accent">
+                <ReplyBubbleIcon size={11} className="shrink-0" />
+                Replying to @{replyCtx.handle}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className={cx('flex gap-3', extraPosts.length > 0 && 'relative pb-3')}>
+          {extraPosts.length > 0 && (
+            <div
+              aria-hidden="true"
+              className="absolute top-[46px] bottom-0 left-[19px] w-px bg-line"
+            />
+          )}
           <PostTargets
             accounts={accounts}
             active={account}
@@ -744,6 +1143,7 @@ export function Composer({
                 }}
                 onPaste={handlePaste}
                 onKeyDown={handleKeyDown}
+                onFocus={() => setActiveSegmentId(null)}
                 onSelect={() => {
                   rememberSelection();
                   mentions.sync();
@@ -755,9 +1155,20 @@ export function Composer({
                     overlay.scrollTop = textareaRef.current.scrollTop;
                   }
                 }}
-                placeholder={targets.length > 1 ? "What's on your mind?" : `What's up, ${firstName}?`}
-                rows={5}
-                className="relative z-10 max-h-[280px] min-h-[150px] w-full resize-none bg-transparent pt-1.5 text-[15px] leading-relaxed text-transparent caret-ink outline-none placeholder:text-ink-faint"
+                placeholder={
+                  replyCtx
+                    ? 'Write your reply'
+                    : targets.length > 1
+                      ? "What's on your mind?"
+                      : `What's up, ${firstName}?`
+                }
+                rows={replyCtx || extraPosts.length > 0 ? 2 : 5}
+                className={cx(
+                  'relative z-10 max-h-[280px] w-full resize-none bg-transparent pt-1.5 text-[15px] leading-relaxed text-transparent caret-ink outline-none placeholder:text-ink-faint',
+                  // Replies and threads hug their content; a lone post keeps
+                  // the roomy canvas.
+                  replyCtx || extraPosts.length > 0 ? 'min-h-[52px]' : 'min-h-[150px]',
+                )}
               />
               {mentions.menu}
             </div>
@@ -779,66 +1190,52 @@ export function Composer({
                 <span className="truncate">Share “{truncateToGraphemes(currentTab.title, 44)}”</span>
               </button>
             )}
+
+            {isThread && hasPreview && <div className="mt-1.5">{rootMedia}</div>}
           </div>
         </div>
 
-        {/* Attachments span the full width and sit at the bottom of the
-            composer, just above the interaction bar (mt-auto drops them down). */}
-        {hasPreview && (
-          <div className="mt-auto pt-2">
-            {images.length > 0 && (
-              <MediaStrip
-                images={images}
-                onRemove={removeImage}
-                onEditAlt={(image) => setAltTarget({ kind: 'image', image })}
-              />
-            )}
-
-            {gif && (
-              <GifAttachment
-                gif={gif}
-                onEditAlt={() => setAltTarget({ kind: 'gif' })}
-                onRemove={() => setGif(null)}
-              />
-            )}
-
-            {video && (
-              <VideoAttachment
-                video={video}
-                onEditAlt={() => setAltTarget({ kind: 'video' })}
-                onRemove={removeVideo}
-              />
-            )}
-
-            {showLinkPreview && cardLoading && (
-              <div className="flex h-[76px] items-center justify-center gap-2 rounded-xl border border-line text-xs text-ink-faint">
-                <Spinner size={13} />
-                Fetching link preview…
-              </div>
-            )}
-
-            {showLinkPreview && !cardLoading && card && (
-              <CardPreview
-                card={card}
-                onDismiss={() => {
-                  // Closing the preview resets the draft: card AND the typed text
-                  // (usually just the pasted URL). Nothing stays "dismissed":
-                  // pasting a URL again fetches a fresh preview.
-                  dismissedUrlRef.current = null;
-                  requestedUrlRef.current = null;
-                  setCard(null);
-                  setText('');
-                  selectionRef.current = { start: 0, end: 0 };
-                  mentions.dismiss();
-                  textareaRef.current?.focus();
-                }}
-              />
-            )}
-          </div>
+        {/* Follow-up posts render exactly like the root: an avatar row per
+            post, chained by the thread line, each with its own images. */}
+        {extraPosts.map((segment, index) => (
+          <ThreadSegmentEditor
+            key={segment.id}
+            segment={segment}
+            account={account}
+            isLast={index === extraPosts.length - 1}
+            active={segment.id === activeSegmentId}
+            autoFocus={segment.id === focusSegmentId}
+            onFocus={() => setActiveSegmentId(segment.id)}
+            onChange={updateThreadPost}
+            onRemove={removeThreadPost}
+            onAddImages={addSegmentImages}
+            onRemoveImage={removeSegmentImage}
+            onEditAlt={(image) => setAltTarget({ kind: 'image', image, segmentId: segment.id })}
+          />
+        ))}
+        {!replyCtx && composerDirty && extraPosts.length + 1 < MAX_THREAD_POSTS && (
+          <button
+            type="button"
+            onClick={addThreadPost}
+            className="mb-1 ml-[50px] inline-flex h-7 w-fit cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-accent transition-colors hover:bg-accent-soft"
+          >
+            <PlusIcon size={13} />
+            {extraPosts.length > 0 ? 'Add another post' : 'Add to thread'}
+          </button>
         )}
+
+        {/* On a lone post the attachments drop to the bottom, just above the
+            interaction bar; a thread keeps them inline under the root text. */}
+        {!isThread && hasPreview && <div className="mt-auto pt-2">{rootMedia}</div>}
       </div>
 
-      <div className="flex items-center gap-2 px-3 pb-2">
+      <div
+        className={cx(
+          'flex items-center gap-2 px-3 pb-2',
+          replyCtx && !(video && videoJob) && 'hidden',
+        )}
+      >
+        {!replyCtx && (
         <button
           type="button"
           onClick={() => setSheet('interaction')}
@@ -859,11 +1256,13 @@ export function Composer({
           <span className="truncate">{summarizeInteraction(interaction)}</span>
           <ChevronDownIcon size={12} className="shrink-0 text-ink-faint" />
         </button>
+        )}
 
         <div className="flex-1" />
 
-        {/* Video upload status floats here, opposite the interaction pill. */}
-        {video && videoJob && (
+        {/* Video progress floats here, opposite the interaction pill; a failed
+            upload is shown by the dismissible banner under the video instead. */}
+        {video && videoJob && videoJob.phase !== 'error' && (
           <VideoUploadPill
             job={videoJob}
             onRetry={() => startVideoUpload(video, videoOwnerRef.current ?? account.did)}
@@ -875,17 +1274,19 @@ export function Composer({
         <input
           ref={fileInputRef}
           type="file"
-          // Only offer video in the OS picker when the account may upload it.
-          accept={canUploadVideo ? `${IMAGE_INPUT_ACCEPT},${VIDEO_INPUT_ACCEPT}` : IMAGE_INPUT_ACCEPT}
+          // Follow-up posts take photos only; the root may also take a video.
+          accept={
+            activeSegment ? IMAGE_INPUT_ACCEPT : `${IMAGE_INPUT_ACCEPT},${VIDEO_INPUT_ACCEPT}`
+          }
           multiple
           hidden
           onChange={(e) => {
-            if (e.target.files) void addFiles(e.target.files);
+            if (e.target.files) handlePickedFiles(e.target.files);
             e.target.value = '';
           }}
         />
         <IconButton
-          title={canUploadVideo ? 'Add photos or a video' : 'Add photos'}
+          title={activeSegment ? 'Add photos to the selected post' : 'Add photos or a video'}
           disabled={mediaButtonDisabled}
           onClick={() => fileInputRef.current?.click()}
         >
@@ -900,6 +1301,16 @@ export function Composer({
 
         <div className="flex-1" />
 
+        {remaining < 0 && extraPosts.length === 0 && (
+          <button
+            type="button"
+            onClick={splitRootIntoThread}
+            title="Split this text into a thread at natural breaks"
+            className="h-7 shrink-0 cursor-pointer rounded-lg bg-accent-soft px-2 text-[11px] font-semibold text-accent transition-[filter] hover:brightness-105"
+          >
+            Split into thread
+          </button>
+        )}
         {graphemes > 0 && (
           <>
             {remaining <= 60 && (
@@ -923,7 +1334,7 @@ export function Composer({
           title={
             videoNotReady
               ? 'Post once the video finishes uploading'
-              : 'Post (Ctrl+Enter)'
+              : `${replyCtx ? 'Reply' : 'Post'} (Ctrl+Enter)`
           }
           className="btn btn-primary relative ml-1.5 h-8 gap-1.5 px-4"
         >
@@ -932,7 +1343,9 @@ export function Composer({
               <Spinner size={14} />
             </span>
           )}
-          <span className={cx(posting && 'invisible')}>Post</span>
+          <span className={cx(posting && 'invisible')}>
+            {replyCtx ? 'Reply' : extraPosts.length > 0 ? 'Post all' : 'Post'}
+          </span>
         </button>
       </footer>
 
@@ -976,9 +1389,25 @@ export function Composer({
           onSave={(alt) => {
             if (altTarget.kind === 'image') {
               const target = altTarget.image;
-              setImages((prev) =>
-                prev.map((item) => (item.id === target.id ? { ...item, alt } : item)),
-              );
+              const segmentId = altTarget.segmentId;
+              if (segmentId) {
+                setExtraPosts((prev) =>
+                  prev.map((segment) =>
+                    segment.id === segmentId
+                      ? {
+                          ...segment,
+                          images: segment.images.map((item) =>
+                            item.id === target.id ? { ...item, alt } : item,
+                          ),
+                        }
+                      : segment,
+                  ),
+                );
+              } else {
+                setImages((prev) =>
+                  prev.map((item) => (item.id === target.id ? { ...item, alt } : item)),
+                );
+              }
             } else if (altTarget.kind === 'gif') {
               setGif((prev) => (prev ? { ...prev, alt } : prev));
             } else {
@@ -1146,6 +1575,126 @@ function PostTargets({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * One follow-up post in the thread, laid out exactly like the root post (the
+ * pattern X, Bluesky, and Threads share): your avatar on the thread line, a
+ * borderless editor beside it, and the post's own images underneath.
+ */
+function ThreadSegmentEditor({
+  segment,
+  account,
+  isLast,
+  active,
+  autoFocus,
+  onFocus,
+  onChange,
+  onRemove,
+  onAddImages,
+  onRemoveImage,
+  onEditAlt,
+}: {
+  segment: ThreadSegment;
+  account: AccountSnapshot;
+  isLast: boolean;
+  /** This post is where the footer's media button currently lands. */
+  active: boolean;
+  /** Grab the cursor on mount (a just-added post). */
+  autoFocus?: boolean;
+  onFocus: () => void;
+  onChange: (id: string, text: string) => void;
+  onRemove: (id: string) => void;
+  onAddImages: (id: string, files: Iterable<File>) => Promise<void>;
+  onRemoveImage: (id: string, image: PreparedImage) => void;
+  onEditAlt: (image: PreparedImage) => void;
+}) {
+  const graphemes = graphemeLength(segment.text);
+  const remaining = MAX_GRAPHEMES - graphemes;
+  const autosize = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+  return (
+    <div className={cx('relative flex gap-3', !isLast ? 'pb-3' : 'pb-1')}>
+      {!isLast && (
+        <div aria-hidden="true" className="absolute top-[46px] bottom-0 left-[19px] w-px bg-line" />
+      )}
+      <span className={cx('h-fit rounded-full', active && 'ring-2 ring-accent/45')}>
+        <Avatar src={account.avatar} name={account.displayName ?? account.handle} size={38} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-1">
+          <textarea
+            ref={autosize}
+            value={segment.text}
+            autoFocus={autoFocus}
+            onFocus={onFocus}
+            onChange={(event) => {
+              onChange(segment.id, event.target.value);
+              autosize(event.currentTarget);
+            }}
+            onPaste={(event) => {
+              const files = event.clipboardData?.files;
+              if (files && files.length > 0) {
+                event.preventDefault();
+                void onAddImages(segment.id, files);
+              }
+            }}
+            rows={1}
+            placeholder="Write another post"
+            className="min-h-[38px] w-full flex-1 resize-none bg-transparent pt-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
+          />
+          <IconButton
+            title="Remove this post"
+            onClick={() => onRemove(segment.id)}
+            className="mt-1 size-6 shrink-0 text-ink-faint hover:text-ink"
+          >
+            <XIcon size={12} />
+          </IconButton>
+        </div>
+
+        {segment.images.length > 0 && (
+          <div className="mt-1.5 flex gap-1.5 overflow-x-auto pb-1">
+            {segment.images.map((image) => (
+              <div
+                key={image.id}
+                className="group relative size-16 shrink-0 overflow-hidden rounded-lg border border-line bg-surface-2"
+              >
+                <img
+                  src={image.previewUrl}
+                  alt={image.alt || 'Attached image'}
+                  className="h-full w-full object-cover"
+                />
+                <AltBadge image={image} onEditAlt={onEditAlt} compact />
+                <RemoveBadge
+                  label="Remove image"
+                  onClick={() => onRemoveImage(segment.id, image)}
+                  compact
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {remaining <= 60 && (
+          <div className="flex justify-end">
+            <span
+              className={cx(
+                'text-[10px] font-medium tabular-nums',
+                remaining < 0 ? 'text-danger' : 'text-ink-faint',
+              )}
+            >
+              {remaining}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

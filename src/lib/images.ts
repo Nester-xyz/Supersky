@@ -23,7 +23,15 @@ const MAX_DIMENSION = 4000;
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const JPEG_QUALITY_STEPS = [0.9, 0.8, 0.7, 0.55];
 
-export const IMAGE_INPUT_ACCEPT = ACCEPTED_TYPES.join(',');
+/** MIME types plus extensions, since Windows' picker maps MIME unreliably. */
+export const IMAGE_INPUT_ACCEPT = [
+  ...ACCEPTED_TYPES,
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
+].join(',');
 
 /**
  * Validate, downscale, and compress an image until it fits Bluesky's blob

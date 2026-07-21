@@ -60,8 +60,62 @@ export function truncateToGraphemes(text: string, max: number): string {
   return `${result.trimEnd()}…`;
 }
 
+/**
+ * Split over-limit text into thread-sized segments, breaking at the most
+ * natural boundary that still fills a decent share of each post: paragraph
+ * first, then line, sentence, word, and only then a hard cut (for text with
+ * no whitespace at all). Grapheme-aware throughout, like the 300 limit.
+ */
+export function splitIntoThread(text: string, max: number = MAX_GRAPHEMES): string[] {
+  let rest = text.trim();
+  if (!rest) return [];
+  const parts: string[] = [];
+  while (graphemeLength(rest) > max) {
+    const head = takeGraphemes(rest, max);
+    const cut = bestBreak(head);
+    parts.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).replace(/^\s+/, '');
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
+
+/** The first `max` graphemes of text, as a plain substring. */
+function takeGraphemes(text: string, max: number): string {
+  let used = 0;
+  let end = 0;
+  for (const segment of segmenter.segment(text)) {
+    if (used >= max) break;
+    used++;
+    end = segment.index + segment.segment.length;
+  }
+  return text.slice(0, end);
+}
+
+/**
+ * The UTF-16 index to cut a full head at. Boundaries that would leave a
+ * segment shorter than ~a third of the budget lose to the next preference,
+ * so one early paragraph break doesn't produce a tiny fragment.
+ */
+function bestBreak(head: string): number {
+  const minimum = Math.floor(head.length / 3);
+  const lastMatchEnd = (re: RegExp): number => {
+    let end = -1;
+    for (const match of head.matchAll(re)) {
+      end = match.index + match[0].length;
+    }
+    return end;
+  };
+  for (const re of [/\n\s*\n/g, /\n/g, /[.!?…][)"'’”\]]*\s+/g, /\s+/g]) {
+    const end = lastMatchEnd(re);
+    if (end >= minimum) return end;
+  }
+  return head.length;
+}
+
 /** Compose initial post text for a context-menu share or cross-post hand-off. */
 export function buildShareText(share: PendingShare): string {
+  if (share.kind === 'reply') return '';
   if (share.kind === 'crosspost') return share.text ?? '';
   if (share.kind === 'selection') {
     const url = share.url ?? '';

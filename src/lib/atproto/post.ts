@@ -16,13 +16,15 @@ import { isDefaultInteraction, threadgateAllowRules } from '../interaction';
 import { MAX_GRAPHEMES } from '../text';
 import { nextTid } from '../tid';
 import { postWebUrl } from '../urls';
+import { computeRecordCid } from './cid';
 import type { AttachedGif } from '../gifs';
-import type {
-  ComposerImagePayload,
-  ComposerVideoPayload,
-  LinkCardData,
-  PublishRequest,
-  PublishResult,
+import {
+  MAX_THREAD_POSTS,
+  type ComposerImagePayload,
+  type ComposerVideoPayload,
+  type LinkCardData,
+  type PublishRequest,
+  type PublishResult,
 } from '../types';
 
 /** Up to 4 images ride the classic embed; 5+ promote to the gallery embed. */
@@ -35,98 +37,191 @@ type MediaEmbed =
   | $Typed<AppBskyEmbedVideo.Main>
   | $Typed<AppBskyEmbedExternal.Main>;
 
+interface StrongRef {
+  uri: string;
+  cid: string;
+}
+
+/**
+ * The parent being replied to plus the thread's root, the way the official
+ * app derives them: the parent's own reply.root when it has one, else the
+ * parent is the root.
+ */
+async function resolveReplyRefs(
+  agent: AtpAgent,
+  uri: string,
+): Promise<{ root: StrongRef; parent: StrongRef }> {
+  const { data } = await agent.app.bsky.feed.getPosts({ uris: [uri] });
+  const parentPost = data.posts[0];
+  if (!parentPost) {
+    throw new Error('The post you’re replying to is gone (deleted or blocked).');
+  }
+  const parent: StrongRef = { uri: parentPost.uri, cid: parentPost.cid };
+  const record = parentPost.record as {
+    reply?: { root?: { uri?: unknown; cid?: unknown } };
+  };
+  const root = record?.reply?.root;
+  return {
+    parent,
+    root:
+      root && typeof root.uri === 'string' && typeof root.cid === 'string'
+        ? { uri: root.uri, cid: root.cid }
+        : parent,
+  };
+}
+
+/**
+ * Publish a post, a reply, or a whole thread in one atomic applyWrites
+ * commit. Each segment's record CID is computed locally so the next segment
+ * can reference it before anything reaches the PDS; media rides on the root
+ * post; the threadgate (root-only, never on replies) and postgates share
+ * their post's rkey.
+ */
 export async function publishPost(agent: AtpAgent, request: PublishRequest): Promise<PublishResult> {
-  const text = request.text.trim();
+  const rootText = request.text.trim();
+  const extras = (request.extraPosts ?? [])
+    .map((post) => ({ text: post.text.trim(), images: post.images ?? [] }))
+    .filter((post) => post.text.length > 0 || post.images.length > 0)
+    .slice(0, MAX_THREAD_POSTS - 1);
   const hasMedia =
     request.images.length > 0 || Boolean(request.video) || Boolean(request.gif);
-  if (!text && !hasMedia) {
+  if (!rootText && !hasMedia) {
     throw new Error('Write something (or add an image, video, or GIF) first.');
-  }
-
-  const richText = new RichText({ text });
-  await richText.detectFacets(agent); // resolves mentions + links into facets
-
-  if (richText.graphemeLength > MAX_GRAPHEMES) {
-    throw new Error(`Posts can be at most ${MAX_GRAPHEMES} characters.`);
   }
 
   const did = agent.session?.did;
   if (!did) throw new Error('You’re signed out. Open the popup and sign in first.');
 
-  let embed: MediaEmbed | undefined;
-  if (request.images.length > 0) {
-    embed = await buildImagesEmbed(agent, request.images.slice(0, MAX_IMAGES));
-  } else if (request.video) {
-    embed = buildVideoEmbed(request.video, did);
-  } else if (request.gif) {
-    embed = await buildGifEmbed(agent, request.gif);
-  } else if (request.card) {
-    embed = await buildExternalEmbed(agent, request.card);
+  // Facets resolve up front so a bad segment fails before anything uploads.
+  const bodies = [rootText, ...extras.map((post) => post.text)];
+  const richTexts: RichText[] = [];
+  for (const [index, body] of bodies.entries()) {
+    const richText = new RichText({ text: body });
+    await richText.detectFacets(agent); // resolves mentions + links into facets
+    if (richText.graphemeLength > MAX_GRAPHEMES) {
+      throw new Error(
+        bodies.length > 1
+          ? `Post ${index + 1} of the thread is over ${MAX_GRAPHEMES} characters.`
+          : `Posts can be at most ${MAX_GRAPHEMES} characters.`,
+      );
+    }
+    richTexts.push(richText);
   }
 
-  // The post plus its threadgate/postgate land in one atomic commit, sharing
-  // the post's rkey as the lexicons require.
-  const rkey = nextTid();
-  const uri = `at://${did}/app.bsky.feed.post/${rkey}`;
-  const createdAt = new Date().toISOString();
+  const replyRefs = request.replyTo ? await resolveReplyRefs(agent, request.replyTo) : null;
 
-  const record: AppBskyFeedPost.Record = {
-    $type: 'app.bsky.feed.post',
-    createdAt,
-    text: richText.text,
-    facets: richText.facets,
-    langs: request.langs?.length ? request.langs.slice(0, 3) : undefined,
-    embed,
-  };
+  // Root gets its images/GIF/card; each follow-up gets its own images. A
+  // video lands on whichever post it was attached to (videoPostIndex, default
+  // the root), replacing that post's other media.
+  const embeds: Array<MediaEmbed | undefined> = [];
+  if (request.images.length > 0) {
+    embeds.push(await buildImagesEmbed(agent, request.images.slice(0, MAX_IMAGES)));
+  } else if (request.gif) {
+    embeds.push(await buildGifEmbed(agent, request.gif));
+  } else if (request.card) {
+    embeds.push(await buildExternalEmbed(agent, request.card));
+  } else {
+    embeds.push(undefined);
+  }
+  for (const post of extras) {
+    embeds.push(
+      post.images.length > 0
+        ? await buildImagesEmbed(agent, post.images.slice(0, MAX_IMAGES))
+        : undefined,
+    );
+  }
+  if (request.video) {
+    const videoIndex = Math.min(Math.max(request.videoPostIndex ?? 0, 0), embeds.length - 1);
+    embeds[videoIndex] = buildVideoEmbed(request.video, did);
+  }
 
-  const writes: $Typed<ComAtprotoRepoApplyWrites.Create>[] = [
-    {
+  const langs = request.langs?.length ? request.langs.slice(0, 3) : undefined;
+  const interaction = request.interaction;
+  const gated = Boolean(interaction && !isDefaultInteraction(interaction));
+  const writes: $Typed<ComAtprotoRepoApplyWrites.Create>[] = [];
+
+  const startedAt = Date.now();
+  let threadRoot: StrongRef | null = replyRefs?.root ?? null;
+  let parentRef: StrongRef | null = replyRefs?.parent ?? null;
+  let rootRef: StrongRef | null = null;
+
+  for (const [index, richText] of richTexts.entries()) {
+    const rkey = nextTid();
+    const uri = `at://${did}/app.bsky.feed.post/${rkey}`;
+    // A millisecond apart per segment, so ordering is never ambiguous.
+    const createdAt = new Date(startedAt + index).toISOString();
+
+    const record: AppBskyFeedPost.Record = {
+      $type: 'app.bsky.feed.post',
+      createdAt,
+      text: richText.text,
+      facets: richText.facets,
+      langs,
+      embed: embeds[index],
+      reply:
+        threadRoot && parentRef ? { root: threadRoot, parent: parentRef } : undefined,
+    };
+
+    const cid = await computeRecordCid(record);
+    const ref: StrongRef = { uri, cid };
+    if (index === 0) {
+      rootRef = ref;
+      if (!threadRoot) threadRoot = ref;
+    }
+    parentRef = ref;
+
+    writes.push({
       $type: 'com.atproto.repo.applyWrites#create',
       collection: 'app.bsky.feed.post',
       rkey,
       value: record,
-    },
-  ];
+    });
 
-  const interaction = request.interaction;
-  if (interaction && !isDefaultInteraction(interaction)) {
-    const allow = threadgateAllowRules(interaction);
-    if (allow !== undefined) {
-      writes.push({
-        $type: 'com.atproto.repo.applyWrites#create',
-        collection: 'app.bsky.feed.threadgate',
-        rkey,
-        value: {
-          $type: 'app.bsky.feed.threadgate',
-          post: uri,
-          createdAt,
-          allow,
-          hiddenReplies: [],
-        },
-      });
-    }
-    if (!interaction.quotesEnabled) {
-      writes.push({
-        $type: 'com.atproto.repo.applyWrites#create',
-        collection: 'app.bsky.feed.postgate',
-        rkey,
-        value: {
-          $type: 'app.bsky.feed.postgate',
-          post: uri,
-          createdAt,
-          embeddingRules: [{ $type: 'app.bsky.feed.postgate#disableRule' }],
-          detachedEmbeddingUris: [],
-        },
-      });
+    if (gated && interaction) {
+      // Threadgates belong to the thread root and only its author may set
+      // one, so replies never write it.
+      const allow = threadgateAllowRules(interaction);
+      if (index === 0 && !request.replyTo && allow !== undefined) {
+        writes.push({
+          $type: 'com.atproto.repo.applyWrites#create',
+          collection: 'app.bsky.feed.threadgate',
+          rkey,
+          value: {
+            $type: 'app.bsky.feed.threadgate',
+            post: uri,
+            createdAt,
+            allow,
+            hiddenReplies: [],
+          },
+        });
+      }
+      if (!interaction.quotesEnabled) {
+        writes.push({
+          $type: 'com.atproto.repo.applyWrites#create',
+          collection: 'app.bsky.feed.postgate',
+          rkey,
+          value: {
+            $type: 'app.bsky.feed.postgate',
+            post: uri,
+            createdAt,
+            embeddingRules: [{ $type: 'app.bsky.feed.postgate#disableRule' }],
+            detachedEmbeddingUris: [],
+          },
+        });
+      }
     }
   }
 
-  const response = await agent.com.atproto.repo.applyWrites({ repo: did, writes });
-  const first = response.data.results?.[0];
-  const cid = first && 'cid' in first && typeof first.cid === 'string' ? first.cid : '';
+  await agent.com.atproto.repo.applyWrites({ repo: did, writes });
 
   const actor = agent.session?.handle ?? did;
-  return { uri, cid, webUrl: postWebUrl(actor, uri), handle: actor };
+  const uri = rootRef?.uri ?? '';
+  return {
+    uri,
+    cid: rootRef?.cid ?? '',
+    webUrl: postWebUrl(actor, uri),
+    handle: actor,
+  };
 }
 
 async function uploadImageBlob(agent: AtpAgent, image: ComposerImagePayload): Promise<BlobRef> {

@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { AttachedGif } from './gifs';
 import type { InteractionSettings } from './interaction';
-import type { ComposerImagePayload } from './types';
+import type { ComposerImagePayload, ThreadPostPayload } from './types';
 
 /**
  * Two layers of not-losing-your-post:
@@ -27,6 +27,8 @@ export const MAX_DRAFTS = 20;
 
 interface AutosaveMeta {
   text: string;
+  /** Additional thread posts below the root. */
+  extraPosts?: string[];
   lang?: string;
   gif?: AttachedGif | null;
   interaction?: InteractionSettings | null;
@@ -38,11 +40,12 @@ const AUTOSAVE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function saveAutosaveMeta(meta: {
   text: string;
+  extraPosts: string[];
   lang: string;
   gif: AttachedGif | null;
   interaction: InteractionSettings | null;
 }): Promise<void> {
-  if (!meta.text.trim() && !meta.gif && !meta.interaction) {
+  if (!meta.text.trim() && meta.extraPosts.length === 0 && !meta.gif && !meta.interaction) {
     await browser.storage.local.remove(AUTOSAVE_KEY);
     return;
   }
@@ -60,6 +63,7 @@ export async function saveAutosaveImages(images: ComposerImagePayload[]): Promis
 
 export interface RestoredAutosave {
   text: string;
+  extraPosts: string[];
   /** null when nothing was stored (fall back to the settings default). */
   lang: string | null;
   gif: AttachedGif | null;
@@ -73,13 +77,15 @@ export async function loadAutosave(): Promise<RestoredAutosave | null> {
   // fields below absorb that shape unchanged.
   const meta = stored[AUTOSAVE_KEY] as Partial<AutosaveMeta> | undefined;
   const images = (stored[AUTOSAVE_MEDIA_KEY] as ComposerImagePayload[] | undefined) ?? [];
-  if (!meta?.text && !meta?.gif && images.length === 0) return null;
+  const extraPosts = Array.isArray(meta?.extraPosts) ? meta.extraPosts : [];
+  if (!meta?.text && extraPosts.length === 0 && !meta?.gif && images.length === 0) return null;
   if (meta?.savedAt && Date.now() - meta.savedAt > AUTOSAVE_MAX_AGE_MS) {
     await clearDraft();
     return null;
   }
   return {
     text: meta?.text ?? '',
+    extraPosts,
     lang: typeof meta?.lang === 'string' ? meta.lang : null,
     gif: meta?.gif ?? null,
     interaction: meta?.interaction ?? null,
@@ -98,6 +104,8 @@ export async function clearDraft(): Promise<void> {
 export interface SavedDraft {
   id: string;
   text: string;
+  /** Additional thread posts below the root (absent on older drafts). */
+  extraPosts?: ThreadPostPayload[];
   lang: string;
   savedAt: number;
   images: ComposerImagePayload[];

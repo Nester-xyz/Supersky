@@ -9,12 +9,6 @@ export interface AccountSnapshot {
   avatar?: string;
   /** PDS base URL this account is signed in against, e.g. https://bsky.social */
   service: string;
-  /**
-   * Whether the account's email is confirmed. Bluesky requires this to upload
-   * videos, so the composer hides the video affordance when it's explicitly
-   * false. Undefined means not yet known (treated as allowed).
-   */
-  emailConfirmed?: boolean;
 }
 
 export type AuthState =
@@ -76,11 +70,30 @@ export interface ComposerVideoPayload {
   did: string;
 }
 
+/** How many posts one thread may carry (root included). */
+export const MAX_THREAD_POSTS = 12;
+
+/** One follow-up post in a thread: its text plus its own images. */
+export interface ThreadPostPayload {
+  text: string;
+  images: ComposerImagePayload[];
+}
+
 export interface PublishRequest {
   text: string;
+  /**
+   * Additional thread posts, published beneath the root in one atomic
+   * commit. Each may carry its own images; GIFs, video, and link cards stay
+   * on the root.
+   */
+  extraPosts?: ThreadPostPayload[];
+  /** AT-URI of the post being replied to; the whole chain nests under it. */
+  replyTo?: string | null;
   langs?: string[];
   images: ComposerImagePayload[];
   video?: ComposerVideoPayload | null;
+  /** Which post in the thread carries the video (0 = root, the default). */
+  videoPostIndex?: number;
   gif?: AttachedGif | null;
   card: LinkCardData | null;
   interaction?: InteractionSettings | null;
@@ -108,14 +121,28 @@ export interface PublishResult {
 }
 
 /**
- * Payload stashed by the background when the user shares via context menu, or
- * hands a just-published X post off to the full composer.
+ * Payload stashed by the background when the user shares via context menu,
+ * hands a just-published X post off to the full composer, or replies to a
+ * notification banner.
  */
 export interface PendingShare {
-  kind: 'page' | 'link' | 'selection' | 'crosspost';
+  kind: 'page' | 'link' | 'selection' | 'crosspost' | 'reply';
   url?: string;
   title?: string;
   text?: string;
   /** crosspost only: images already compressed to Bluesky's limits. */
   images?: ComposerImagePayload[];
+  /** crosspost only: follow-up thread posts, each with its own images. */
+  extraPosts?: ThreadPostPayload[];
+  /**
+   * crosspost only: storage.local key holding the handed-off video bytes
+   * (base64), which the composer reconstructs, then clears.
+   */
+  videoKey?: string;
+  /** reply only: the post being replied to, rendered above the reply box. */
+  replyTo?: string;
+  replyToHandle?: string;
+  replyToDisplayName?: string;
+  replyToAvatar?: string;
+  replyToText?: string;
 }

@@ -100,6 +100,11 @@ export default defineBackground(() => {
     const url = id.startsWith('https://') ? id : id === SUMMARY_TOAST_ID ? NOTIFICATIONS_URL : null;
     if (url) void browser.tabs.create({ url });
   });
+  // The Reply button on reply/mention/quote banners (Chrome only; Firefox has
+  // no notification buttons).
+  browser.notifications.onButtonClicked?.addListener((id) => {
+    void handleToastReplyClick(id);
+  });
   watchSettings(() => {
     void schedulePolling();
   });
@@ -194,7 +199,7 @@ async function openWelcome(): Promise<void> {
   }
 }
 
-async function openComposer(): Promise<void> {
+async function openComposer(options?: { height?: number }): Promise<void> {
   try {
     // Available in Chrome 127+; throws elsewhere or without a user gesture.
     await browser.action.openPopup();
@@ -203,7 +208,7 @@ async function openComposer(): Promise<void> {
       url: browser.runtime.getURL('/popup.html') + '?mode=window',
       type: 'popup',
       width: 424,
-      height: 660,
+      height: options?.height ?? 660,
     });
   }
 }
@@ -376,17 +381,77 @@ function toastUrl(did: string, item: NotificationView): string {
   }
 }
 
+/** Banners that are conversations get a one-click Reply action (Chrome only). */
+const REPLYABLE_REASONS = new Set(['reply', 'mention', 'quote']);
+const TOAST_REPLY_KEY = 'supersky:toast-replies';
+
+interface ToastReplyMeta {
+  /** AT-URI of the author's post the reply should nest under. */
+  uri: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+  text: string;
+  at: number;
+}
+
+async function readToastReplies(): Promise<Record<string, ToastReplyMeta>> {
+  const stored = await browser.storage.session.get(TOAST_REPLY_KEY);
+  return (stored[TOAST_REPLY_KEY] as Record<string, ToastReplyMeta> | undefined) ?? {};
+}
+
+async function rememberToastReply(id: string, meta: ToastReplyMeta): Promise<void> {
+  const map = await readToastReplies();
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const key of Object.keys(map)) {
+    if ((map[key]?.at ?? 0) < cutoff) delete map[key];
+  }
+  map[id] = meta;
+  await browser.storage.session.set({ [TOAST_REPLY_KEY]: map });
+}
+
+/** Reply button pressed: stage a reply share and open the composer on it. */
+async function handleToastReplyClick(id: string): Promise<void> {
+  const meta = (await readToastReplies())[id];
+  if (!meta) return;
+  void browser.notifications.clear(id);
+  await setPendingShare({
+    kind: 'reply',
+    replyTo: meta.uri,
+    replyToHandle: meta.handle,
+    replyToDisplayName: meta.displayName,
+    replyToAvatar: meta.avatar,
+    replyToText: meta.text,
+  });
+  // Replies are short-form; the fallback window hugs them instead of towering.
+  await openComposer({ height: 500 });
+}
+
 async function createToast(did: string, item: NotificationView): Promise<void> {
   // Replies, quotes, and mentions carry the author's post text, so surface it.
   const record = item.record as { text?: unknown } | undefined;
   const text = typeof record?.text === 'string' ? record.text : '';
   const avatar = await fetchIconDataUrl(item.author.avatar);
-  await browser.notifications.create(toastUrl(did, item), {
+  const id = toastUrl(did, item);
+  const canReply =
+    REPLYABLE_REASONS.has(item.reason) && import.meta.env.BROWSER !== 'firefox';
+  if (canReply) {
+    await rememberToastReply(id, {
+      uri: item.uri,
+      handle: item.author.handle,
+      displayName: item.author.displayName || undefined,
+      avatar: item.author.avatar || undefined,
+      text,
+      at: Date.now(),
+    });
+  }
+  await browser.notifications.create(id, {
     type: 'basic',
     iconUrl: avatar ?? browser.runtime.getURL('/icon/128.png'),
     title: `${authorName(item)} ${reasonPhrase(item)}`,
     message: text.length > 140 ? `${text.slice(0, 139)}…` : text,
     ...branding(),
+    ...(canReply ? { buttons: [{ title: 'Reply' }] } : {}),
   });
 }
 

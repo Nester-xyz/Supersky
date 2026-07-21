@@ -16,7 +16,20 @@ export const MAX_VIDEO_DURATION_S = 3 * 60;
 export const MAX_VIDEO_BYTES = 100_000_000;
 
 const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime', 'video/mpeg'];
-export const VIDEO_INPUT_ACCEPT = ACCEPTED_VIDEO_TYPES.join(',');
+/**
+ * File-picker filter. Includes explicit extensions because Windows Explorer
+ * maps bare `video/*` MIME types to file types unreliably, which can hide
+ * every video from the dialog.
+ */
+export const VIDEO_INPUT_ACCEPT = [
+  ...ACCEPTED_VIDEO_TYPES,
+  '.mp4',
+  '.m4v',
+  '.mov',
+  '.webm',
+  '.mpeg',
+  '.mpg',
+].join(',');
 
 export function isVideoFile(file: File): boolean {
   return file.type.startsWith('video/');

@@ -3,19 +3,36 @@
 Notable user-facing changes to Supersky. Releases before 0.1.2 predate this
 file; see the commit history for those.
 
-## Unreleased
+## 0.2.0 (2026-07-21)
 
 ### Added
 
+- **Threads.** Chain posts in the composer with "Add to thread": every post in
+  the thread gets its own row on the thread line, with its own editor, counter,
+  and images. Or write past 300 characters and hit "Split into thread" to break
+  the text at natural boundaries (paragraphs, then sentences, then words). The
+  whole thread publishes in one atomic commit, so it can never land
+  half-posted. Each post carries its own photos, and a video can go on any
+  post in the thread (one per thread), so you can cross-post an X photo and
+  add a video as the next post. Works in the X cross-post card too, which is a
+  full mini composer. Threads save into drafts (segment images included);
+  GIFs and link cards stay on the first post.
+- **Reply from a banner.** Reply, mention, and quote notifications now carry a
+  Reply button (Chrome). One click opens the composer in reply mode, showing
+  who and what you're replying to, and the reply nests correctly under their
+  post, threads included.
+
 - **Cross-post suggestions from X.** After you publish a main post on x.com
   (never replies, quotes, threads, or community posts), a card in the corner
-  offers to post it on Bluesky too. It expands into a mini composer with the
-  text, images, and even the attached video carried over (uploaded through
-  Bluesky's video service with live progress), a 300-character counter with
-  one-click trim, and a jump into the full Supersky composer. Posts mixing
-  photos and a video get a clear picker, since Bluesky allows one media kind
-  per post. Works only while signed in, reads the post only at the moment you
-  publish it, and can be turned off from the card ("Never") or in settings.
+  offers to post it on Bluesky too. It expands into a full mini composer built
+  like the popup: the tweet's text, images, and video carry over, and you can
+  edit freely, adding or removing photos, swapping in a different video
+  (uploaded through Bluesky's video service with live progress), building a
+  thread by splitting long text or with the "+" button (each post with its own
+  photos), and handing the whole thing off to the full Supersky composer, media
+  and all.
+  Works only while signed in, reads the post only at the moment you publish it,
+  and can be turned off from the card or in settings.
 
 - **Up to 10 images per post.** Matching Bluesky's new limit: up to 4 images
   post as the classic embed every client renders, and 5–10 use Bluesky's new
@@ -25,9 +42,11 @@ file; see the commit history for those.
   and 100 MB, Bluesky's current limits). The upload starts immediately via
   Bluesky's video service, shows uploading/processing progress on the preview,
   and pressing Post while it's still processing publishes automatically the
-  moment it's ready. Includes alt text. Video is offered only when the
-  account's email is confirmed (Bluesky requires it); otherwise the composer
-  stays photos-and-GIFs only and explains why if a video is dropped in.
+  moment it's ready. Includes alt text. Video is always offered; Bluesky only
+  allows uploads once an account's email is confirmed, so an unconfirmed
+  account that tries to upload gets a dismissible note explaining why (the rest
+  of the post is untouched). Because the check runs at upload time, switching
+  between accounts with different email status stays reliable.
 - **GIF picker.** A searchable GIF popover backed by the same Bluesky GIF
   service (Klipy) the official app uses, with featured GIFs, infinite scroll,
   and alt text. GIFs post in the exact format bsky.app plays inline.
@@ -41,8 +60,8 @@ file; see the commit history for those.
   in the header, reopen or delete drafts, and the draft you opened cleans
   itself up once it's posted. Up to 20 drafts, stored on this device only.
 - **Nothing is lost when the popup closes.** Clicking outside the popup
-  dismisses it instantly, so the composer now autosaves everything as you go —
-  text, language, images, GIF, and interaction settings — and restores it all
+  dismisses it instantly, so the composer now autosaves everything as you go
+  (text, language, images, GIF, and interaction settings) and restores it all
   the next time it opens. (Videos are the one exception: their upload session
   can't outlive the popup.)
 

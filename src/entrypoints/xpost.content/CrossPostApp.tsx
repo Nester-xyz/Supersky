@@ -1,15 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircleIcon, CheckIcon, PencilIcon, VideoIcon, XIcon } from '@/components/icons';
+import { browser } from 'wxt/browser';
+import {
+  AlertCircleIcon,
+  CheckIcon,
+  ImageIcon,
+  PencilIcon,
+  PlusIcon,
+  VideoIcon,
+  XIcon,
+} from '@/components/icons';
 import { LogoMark } from '@/components/Logo';
 import { CharRing, IconButton, Spinner, cx } from '@/components/ui';
 import { VideoUploadPill, type VideoJob } from '@/components/VideoUploadStatus';
 import { toErrorMessage } from '@/lib/errors';
-import { prepareImage, releaseImage, type PreparedImage } from '@/lib/images';
+import {
+  IMAGE_INPUT_ACCEPT,
+  MAX_IMAGES,
+  prepareImage,
+  releaseImage,
+  type PreparedImage,
+} from '@/lib/images';
 import { sendMessage } from '@/lib/messaging';
 import { loadSettings, watchSettings, type Settings } from '@/lib/settings';
-import { MAX_GRAPHEMES, graphemeLength, truncateToGraphemes } from '@/lib/text';
+import { MAX_GRAPHEMES, graphemeLength, splitIntoThread, truncateToGraphemes } from '@/lib/text';
 import { resolveTheme } from '@/lib/theme';
 import {
+  VIDEO_INPUT_ACCEPT,
+  isVideoFile,
   pollVideoJob,
   prepareVideo,
   releaseVideo,
@@ -17,7 +34,14 @@ import {
   type PreparedVideo,
 } from '@/lib/video';
 import { watchForMainTweets, type CapturedTweet } from '@/lib/xdetect';
-import type { AccountSnapshot, ComposerImagePayload } from '@/lib/types';
+import {
+  MAX_THREAD_POSTS,
+  type AccountSnapshot,
+  type ComposerImagePayload,
+} from '@/lib/types';
+
+/** Largest video (bytes) we hand off to the popup through storage. */
+const HANDOFF_VIDEO_MAX = 40_000_000;
 
 /** How long the collapsed toast lingers before withdrawing on its own. */
 const TOAST_LIFETIME_MS = 12_000;
@@ -249,8 +273,35 @@ function Toast({
 // ---------------------------------------------------------------------------
 
 type Phase = 'edit' | 'posting' | 'done';
-type MediaChoice = 'photos' | 'video';
 
+interface CardSegment {
+  id: string;
+  text: string;
+  images: PreparedImage[];
+}
+
+function toImagePayload({ base64, mime, alt, width, height }: PreparedImage): ComposerImagePayload {
+  return { base64, mime, alt, width, height };
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(new Error('Could not read the video.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * The editing card, built like the popup composer: a stack of avatar-row posts
+ * on a thread line, each with its own text and photos, plus a footer that
+ * uploads media to the focused post and adds more posts. A single video (on
+ * whichever post you attach it to) uploads straight to Bluesky's video service.
+ */
 function CrossPostCard({
   offer,
   defaultLang,
@@ -263,74 +314,36 @@ function CrossPostCard({
   autoPost?: boolean;
   onClose: () => void;
 }) {
-  const [text, setText] = useState(offer.tweet.text);
-  const [images, setImages] = useState<PreparedImage[] | null>(
-    offer.tweet.images.length > 0 ? null : [],
-  );
+  const [rootId] = useState(() => crypto.randomUUID());
+  const [segments, setSegments] = useState<CardSegment[]>(() => [
+    { id: rootId, text: offer.tweet.text, images: [] },
+  ]);
+  const [activeId, setActiveId] = useState<string>(rootId);
+  const [imagesLoading, setImagesLoading] = useState(offer.tweet.images.length > 0);
   const [phase, setPhase] = useState<Phase>('edit');
   const [error, setError] = useState('');
   const [doneUrl, setDoneUrl] = useState<string | undefined>(undefined);
-  const imagesRef = useRef<PreparedImage[] | null>(images);
-  imagesRef.current = images;
 
-  // Bluesky requires a confirmed email for video uploads.
-  const videoAllowed = offer.account.emailConfirmed !== false;
-  const hasVideo = Boolean(offer.tweet.video) && videoAllowed;
-  const hasPhotos = offer.tweet.images.length > 0;
-  // Bluesky posts carry one media kind; with both captured, the user picks.
-  const [mediaChoice, setMediaChoice] = useState<MediaChoice>(hasPhotos ? 'photos' : 'video');
-  const photosActive = hasPhotos && (!hasVideo || mediaChoice === 'photos');
-  const videoActive = hasVideo && (!hasPhotos || mediaChoice === 'video');
-
+  const [video, setVideo] = useState<PreparedVideo | null>(null);
   const [videoJob, setVideoJob] = useState<VideoJob | null>(null);
-  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
-  const [videoAttempt, setVideoAttempt] = useState(0);
-  const preparedVideoRef = useRef<PreparedVideo | null>(null);
+  /** Which post the video belongs to (a thread can carry one video). */
+  const [videoSegmentId, setVideoSegmentId] = useState<string | null>(null);
+  const videoAbortRef = useRef<AbortController | null>(null);
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  const videoRef = useRef(video);
+  videoRef.current = video;
 
-  // Compress the captured photos to Bluesky's limits in the background.
-  useEffect(() => {
-    let mounted = true;
-    if (offer.tweet.images.length === 0) return;
-    void (async () => {
-      const prepared: PreparedImage[] = [];
-      for (const blob of offer.tweet.images) {
-        try {
-          prepared.push(await prepareImage(blob));
-        } catch {
-          // An unconvertible image is dropped; the rest still cross-post.
-        }
-      }
-      if (mounted) setImages(prepared);
-      else prepared.forEach(releaseImage);
-    })();
-    return () => {
-      mounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offer.id]);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // The video pipeline: validate + probe, mint an upload token via the
-  // background, upload straight to video.bsky.app, poll until processed.
-  // Runs while the video is the active attachment; switching away aborts.
-  useEffect(() => {
-    const source = offer.tweet.video;
-    if (!videoActive || !source) {
-      setVideoJob(null);
-      return;
-    }
+  // -- video pipeline ---------------------------------------------------------
+  function startVideoUpload(prepared: PreparedVideo) {
+    videoAbortRef.current?.abort();
     const controller = new AbortController();
+    videoAbortRef.current = controller;
     setVideoJob({ phase: 'auth', pct: null });
     void (async () => {
       try {
-        const file = new File([source], 'x-video', { type: source.type || 'video/mp4' });
-        const prepared = await prepareVideo(file);
-        if (controller.signal.aborted) {
-          releaseVideo(prepared);
-          return;
-        }
-        preparedVideoRef.current = prepared;
-        setVideoPreviewUrl(prepared.previewUrl);
-
         const { token } = await sendMessage('video:auth', { did: offer.account.did });
         if (controller.signal.aborted) return;
         setVideoJob({ phase: 'uploading', pct: 0 });
@@ -365,23 +378,78 @@ function CrossPostCard({
           },
         });
       } catch (err) {
-        if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+        if (
+          controller.signal.aborted ||
+          (err instanceof DOMException && err.name === 'AbortError')
+        ) {
           return;
         }
         setVideoJob({ phase: 'error', pct: null, error: toErrorMessage(err) });
       }
     })();
-    return () => {
-      controller.abort();
-      const prepared = preparedVideoRef.current;
-      if (prepared) {
-        releaseVideo(prepared);
-        preparedVideoRef.current = null;
+  }
+
+  async function attachVideoFile(file: File, segmentId: string) {
+    try {
+      const prepared = await prepareVideo(file);
+      if (videoRef.current) releaseVideo(videoRef.current);
+      setVideo(prepared);
+      setVideoSegmentId(segmentId);
+      startVideoUpload(prepared);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    }
+  }
+
+  function removeVideo() {
+    videoAbortRef.current?.abort();
+    videoAbortRef.current = null;
+    if (videoRef.current) releaseVideo(videoRef.current);
+    setVideo(null);
+    setVideoJob(null);
+    setVideoSegmentId(null);
+  }
+
+  // -- captured media on mount ------------------------------------------------
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      if (offer.tweet.images.length > 0) {
+        const prepared: PreparedImage[] = [];
+        for (const blob of offer.tweet.images) {
+          try {
+            prepared.push(await prepareImage(blob));
+          } catch {
+            // Drop an unconvertible image; the rest still carry over.
+          }
+        }
+        if (!mounted) {
+          prepared.forEach(releaseImage);
+          return;
+        }
+        setSegments((prev) =>
+          prev.map((seg) => (seg.id === rootId ? { ...seg, images: prepared } : seg)),
+        );
+        setImagesLoading(false);
       }
-      setVideoPreviewUrl(null);
+      // Auto-attach a captured video only when no photos claim the root. The
+      // upload decides for itself whether this account may post it.
+      if (mounted && offer.tweet.video && offer.tweet.images.length === 0) {
+        await attachVideoFile(
+          new File([offer.tweet.video], 'x-video', {
+            type: offer.tweet.video.type || 'video/mp4',
+          }),
+          rootId,
+        );
+      }
+    })();
+    return () => {
+      mounted = false;
+      videoAbortRef.current?.abort();
+      if (videoRef.current) releaseVideo(videoRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offer.id, videoActive, videoAttempt]);
+  }, [offer.id]);
 
   useEffect(() => {
     if (phase !== 'done') return;
@@ -389,17 +457,185 @@ function CrossPostCard({
     return () => clearTimeout(timer);
   }, [phase, onClose]);
 
+  // -- segments ---------------------------------------------------------------
+  function addSegment() {
+    if (segmentsRef.current.length >= MAX_THREAD_POSTS) return;
+    const seg: CardSegment = { id: crypto.randomUUID(), text: '', images: [] };
+    setSegments((prev) => [...prev, seg]);
+    setActiveId(seg.id);
+  }
 
-  const graphemes = useMemo(() => graphemeLength(text), [text]);
-  const remaining = MAX_GRAPHEMES - graphemes;
-  const imagesReady = !photosActive || images !== null;
-  const videoBlocking = videoActive && videoJob?.phase !== 'ready';
-  const readyVideoPayload = videoActive && videoJob?.phase === 'ready' ? videoJob.payload : null;
-  const hasContent =
-    text.trim().length > 0 ||
-    (photosActive && (images?.length ?? 0) > 0) ||
-    Boolean(readyVideoPayload);
-  const canPost = phase === 'edit' && remaining >= 0 && imagesReady && hasContent && !videoBlocking;
+  function updateSegment(id: string, text: string) {
+    setSegments((prev) => prev.map((seg) => (seg.id === id ? { ...seg, text } : seg)));
+  }
+
+  function removeSegment(id: string) {
+    if (id === rootId) return;
+    segmentsRef.current.find((seg) => seg.id === id)?.images.forEach(releaseImage);
+    setSegments((prev) => prev.filter((seg) => seg.id !== id));
+    setActiveId((current) => (current === id ? rootId : current));
+  }
+
+  async function addImages(id: string, files: Iterable<File>) {
+    const seg = segmentsRef.current.find((item) => item.id === id);
+    if (!seg) return;
+    const room = MAX_IMAGES - seg.images.length;
+    if (room <= 0) {
+      setError(`Each post can have up to ${MAX_IMAGES} images.`);
+      return;
+    }
+    for (const file of [...files].slice(0, room)) {
+      try {
+        const prepared = await prepareImage(file);
+        setSegments((prev) =>
+          prev.map((item) =>
+            item.id === id && item.images.length < MAX_IMAGES
+              ? { ...item, images: [...item.images, prepared] }
+              : item,
+          ),
+        );
+      } catch (err) {
+        setError(toErrorMessage(err));
+      }
+    }
+  }
+
+  function removeImage(id: string, image: PreparedImage) {
+    releaseImage(image);
+    setSegments((prev) =>
+      prev.map((seg) =>
+        seg.id === id ? { ...seg, images: seg.images.filter((i) => i.id !== image.id) } : seg,
+      ),
+    );
+  }
+
+  /** Route the footer picker to the focused post. */
+  function handlePickedFiles(files: FileList) {
+    const targetId = activeId;
+    const target = segmentsRef.current.find((seg) => seg.id === targetId);
+    if (!target) return;
+    const videos = [...files].filter(isVideoFile);
+    const photos = [...files].filter((file) => !isVideoFile(file));
+    if (videos.length > 0) {
+      // Whether this account may actually upload is decided by the server when
+      // the upload runs, so we always accept the pick here.
+      if (videoRef.current) {
+        setError('A thread can carry one video. Remove it to add another.');
+      } else if (target.images.length === 0) {
+        void attachVideoFile(videos[0]!, targetId);
+      } else if (segmentsRef.current.length >= MAX_THREAD_POSTS) {
+        setError('This post has photos, and the thread is full, so remove a post first.');
+      } else {
+        // The focused post has photos; a post can't hold both, so the video
+        // starts a new post right after it.
+        const seg: CardSegment = { id: crypto.randomUUID(), text: '', images: [] };
+        setSegments((prev) => {
+          const index = prev.findIndex((item) => item.id === targetId);
+          const next = [...prev];
+          next.splice(index + 1, 0, seg);
+          return next;
+        });
+        setActiveId(seg.id);
+        void attachVideoFile(videos[0]!, seg.id);
+      }
+    }
+    if (photos.length > 0) {
+      if (videoRef.current && videoSegmentId === targetId) {
+        setError('Remove the video to add photos to this post.');
+      } else {
+        void addImages(targetId, photos);
+      }
+    }
+  }
+
+  function swapToVideo() {
+    if (!offer.tweet.video) return;
+    setSegments((prev) =>
+      prev.map((seg) => {
+        if (seg.id !== rootId) return seg;
+        seg.images.forEach(releaseImage);
+        return { ...seg, images: [] };
+      }),
+    );
+    void attachVideoFile(
+      new File([offer.tweet.video], 'x-video', { type: offer.tweet.video.type || 'video/mp4' }),
+      rootId,
+    );
+  }
+
+  async function swapToPhotos() {
+    removeVideo();
+    const prepared: PreparedImage[] = [];
+    for (const blob of offer.tweet.images) {
+      try {
+        prepared.push(await prepareImage(blob));
+      } catch {
+        // Skip an unconvertible image.
+      }
+    }
+    setSegments((prev) =>
+      prev.map((seg) => (seg.id === rootId ? { ...seg, images: prepared } : seg)),
+    );
+  }
+
+  // -- derived ----------------------------------------------------------------
+  const root = segments[0]!;
+  const activeSegment = segments.find((seg) => seg.id === activeId) ?? root;
+  const hasVideo = Boolean(video);
+  const activeHasVideo = hasVideo && videoSegmentId === activeSegment.id;
+
+  const activeGraphemes = graphemeLength(activeSegment.text);
+  const activeRemaining = MAX_GRAPHEMES - activeGraphemes;
+
+  const rootOverLimit = segments.length === 1 && graphemeLength(root.text) > MAX_GRAPHEMES;
+  const splitPreview = useMemo(
+    () => (rootOverLimit ? splitIntoThread(root.text).length : 0),
+    [rootOverLimit, root.text],
+  );
+
+  const videoBlocking = hasVideo && videoJob?.phase !== 'ready';
+  const readyVideoPayload = hasVideo && videoJob?.phase === 'ready' ? videoJob.payload : null;
+  const videoPostIndex = videoSegmentId
+    ? Math.max(0, segments.findIndex((seg) => seg.id === videoSegmentId))
+    : 0;
+  const segmentsValid = segments.every(
+    (seg) =>
+      (seg.text.trim().length > 0 || seg.images.length > 0 || seg.id === videoSegmentId) &&
+      graphemeLength(seg.text) <= MAX_GRAPHEMES,
+  );
+  const canPost = phase === 'edit' && !imagesLoading && !videoBlocking && segmentsValid;
+
+  // The picker always offers video while the thread has none yet (one per
+  // thread); if the focused post has photos, the picked video starts a new
+  // post, so we don't need to hide it here.
+  const canOfferVideo = !hasVideo;
+  const mediaAccept = canOfferVideo
+    ? `${IMAGE_INPUT_ACCEPT},${VIDEO_INPUT_ACCEPT}`
+    : IMAGE_INPUT_ACCEPT;
+  const mediaDisabled = activeHasVideo ? true : activeSegment.images.length >= MAX_IMAGES;
+
+  // Swap chips only make sense on the root when the captured tweet had both.
+  const rootHasVideo = hasVideo && videoSegmentId === rootId;
+  const showUseVideo =
+    Boolean(offer.tweet.video) && !hasVideo && root.images.length > 0;
+  const showUsePhotos = rootHasVideo && offer.tweet.images.length > 0;
+
+  function splitCardIntoThread() {
+    const parts = splitIntoThread(root.text);
+    if (parts.length <= 1) return;
+    const capped = parts.slice(0, MAX_THREAD_POSTS);
+    if (parts.length > MAX_THREAD_POSTS) {
+      capped[MAX_THREAD_POSTS - 1] = parts.slice(MAX_THREAD_POSTS - 1).join('\n\n');
+    }
+    setSegments((prev) => {
+      const rootImages = prev[0]?.images ?? [];
+      return capped.map((value, index) =>
+        index === 0
+          ? { id: rootId, text: value, images: rootImages }
+          : { id: crypto.randomUUID(), text: value, images: [] },
+      );
+    });
+  }
 
   // A confirmed preview posts itself the moment everything is ready; one
   // attempt only, so a failure lands in the editor instead of retry-looping.
@@ -411,27 +647,20 @@ function CrossPostCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPost, phase, canPost]);
 
-  function imagePayloads(): ComposerImagePayload[] {
-    if (!photosActive) return [];
-    return (imagesRef.current ?? []).map(({ base64, mime, alt, width, height }) => ({
-      base64,
-      mime,
-      alt,
-      width,
-      height,
-    }));
-  }
-
   async function post() {
     if (!canPost) return;
     setPhase('posting');
     setError('');
     try {
       const results = await sendMessage('post:publish', {
-        text,
+        text: root.text,
+        extraPosts: segments
+          .slice(1)
+          .map((seg) => ({ text: seg.text, images: seg.images.map(toImagePayload) })),
         langs: defaultLang ? [defaultLang] : undefined,
-        images: imagePayloads(),
+        images: root.images.map(toImagePayload),
         video: readyVideoPayload,
+        videoPostIndex,
         gif: null,
         card: null,
         interaction: null,
@@ -445,14 +674,37 @@ function CrossPostCard({
     }
   }
 
-  function openFullComposer() {
+  async function openFullComposer() {
+    let videoKey: string | undefined;
+    // The full composer keeps a video on the lead post, so only a root video
+    // carries over cleanly.
+    if (video && videoSegmentId === rootId && video.sizeBytes <= HANDOFF_VIDEO_MAX) {
+      try {
+        const base64 = await fileToBase64(video.file);
+        videoKey = `supersky:handoff-video:${crypto.randomUUID()}`;
+        await browser.storage.local.set({ [videoKey]: { base64, mime: video.mime } });
+      } catch {
+        videoKey = undefined;
+      }
+    }
     void sendMessage('composer:open', {
       kind: 'crosspost',
-      text,
-      images: imagePayloads(),
+      text: root.text,
+      images: root.images.map(toImagePayload),
+      extraPosts: segments
+        .slice(1)
+        .map((seg) => ({ text: seg.text, images: seg.images.map(toImagePayload) })),
+      videoKey,
     }).catch(() => undefined);
     onClose();
   }
+
+  /** Borderless editors grow with their content, like the popup composer. */
+  const autosizeArea = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+  };
 
   if (phase === 'done') {
     return (
@@ -476,9 +728,9 @@ function CrossPostCard({
   }
 
   return (
-    <div className="card animate-slide-up w-[400px] rounded-[10px] shadow-[var(--ss-shadow-pop)]">
+    <div className="card animate-slide-up flex max-h-[86vh] w-[400px] flex-col rounded-[10px] shadow-[var(--ss-shadow-pop)]">
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-        <LogoMark size={22} className="shrink-0" />
+        <LogoMark size={30} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm leading-tight font-semibold text-ink">Post to Bluesky</p>
           <p className="truncate text-[11px] leading-tight text-ink-faint">
@@ -490,109 +742,186 @@ function CrossPostCard({
         </IconButton>
       </div>
 
-      <div className="px-4 pt-3">
-        <textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          rows={5}
-          autoFocus
-          placeholder="What's up?"
-          className="min-h-[110px] w-full resize-none rounded-lg border border-line bg-surface-2/40 p-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
-        />
-
-        {hasPhotos && hasVideo && (
-          <div className="mt-2.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-ink-faint">Include</span>
-              <MediaChoiceChip
-                label={`Photos (${offer.tweet.images.length})`}
-                active={mediaChoice === 'photos'}
-                onClick={() => setMediaChoice('photos')}
-              />
-              <MediaChoiceChip
-                label="Video"
-                active={mediaChoice === 'video'}
-                onClick={() => setMediaChoice('video')}
-              />
-            </div>
-            <p className="mt-1 text-[11px] leading-snug text-ink-faint">
-              Bluesky posts can have photos or a video, not both.
-            </p>
-          </div>
-        )}
-
-        {photosActive && images === null && (
-          <div className="mt-2.5 flex gap-1.5">
-            {offer.tweet.images.map((_, index) => (
-              <div key={index} className="shimmer size-16 rounded-md" />
-            ))}
-          </div>
-        )}
-        {photosActive && images !== null && images.length > 0 && (
-          <div className="mt-2.5 flex gap-1.5">
-            {images.map((image) => (
-              <div
-                key={image.id}
-                className="group relative size-16 shrink-0 overflow-hidden rounded-md border border-line bg-surface-2"
-              >
-                <img src={image.previewUrl} alt="" className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  title="Remove image"
-                  onClick={() =>
-                    setImages((prev) => (prev ?? []).filter((item) => item.id !== image.id))
-                  }
-                  className="absolute top-1 right-1 grid size-5 cursor-pointer place-items-center rounded-md bg-black/65 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  <XIcon size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {videoActive && (
-          <div className="mt-2.5">
-            {videoPreviewUrl ? (
-              <video
-                src={videoPreviewUrl}
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="max-h-44 w-full rounded-md border border-line bg-black object-contain"
-              />
-            ) : (
-              <div className="shimmer h-28 w-full rounded-md" />
-            )}
-            {videoJob && videoJob.phase !== 'ready' && (
-              <div className="mt-2 flex justify-end">
-                <VideoUploadPill
-                  job={videoJob}
-                  onRetry={() => setVideoAttempt((attempt) => attempt + 1)}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-3.5 pb-2">
+        {segments.map((segment, index) => {
+          const last = index === segments.length - 1;
+          const isRoot = segment.id === rootId;
+          const remainingSeg = MAX_GRAPHEMES - graphemeLength(segment.text);
+          return (
+            <div key={segment.id} className={cx('relative flex gap-3', last ? 'pb-1' : 'pb-3')}>
+              {!last && (
+                <div
+                  aria-hidden="true"
+                  className="absolute top-[46px] bottom-0 left-[19px] w-px bg-line"
                 />
+              )}
+              <span className={cx('h-fit rounded-full', segment.id === activeId && 'ring-2 ring-accent/45')}>
+                <AccountAvatar account={offer.account} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-1">
+                  <textarea
+                    ref={autosizeArea}
+                    value={segment.text}
+                    autoFocus={isRoot}
+                    onFocus={() => setActiveId(segment.id)}
+                    onChange={(event) => {
+                      updateSegment(segment.id, event.target.value);
+                      autosizeArea(event.currentTarget);
+                    }}
+                    onPaste={(event) => {
+                      const files = event.clipboardData?.files;
+                      if (files && files.length > 0) {
+                        const photos = [...files].filter((file) => !isVideoFile(file));
+                        if (photos.length > 0) {
+                          event.preventDefault();
+                          void addImages(segment.id, photos);
+                        }
+                      }
+                    }}
+                    rows={isRoot ? 3 : 1}
+                    placeholder={isRoot ? "What's up?" : 'Write another post'}
+                    className={cx(
+                      'w-full resize-none bg-transparent pt-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-faint',
+                      isRoot ? 'min-h-[72px]' : 'min-h-[38px]',
+                    )}
+                  />
+                  {!isRoot && (
+                    <IconButton
+                      title="Remove this post"
+                      onClick={() => removeSegment(segment.id)}
+                      className="mt-1 size-6 shrink-0 text-ink-faint hover:text-ink"
+                    >
+                      <XIcon size={12} />
+                    </IconButton>
+                  )}
+                </div>
+
+                {isRoot && imagesLoading && (
+                  <div className="mt-2 flex gap-1.5">
+                    {offer.tweet.images.map((_, i) => (
+                      <div key={i} className="shimmer size-20 rounded-lg" />
+                    ))}
+                  </div>
+                )}
+                {segment.images.length > 0 && (
+                  <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                    {segment.images.map((image) => (
+                      <div
+                        key={image.id}
+                        className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-line bg-surface-2"
+                      >
+                        <img src={image.previewUrl} alt="" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          title="Remove image"
+                          aria-label="Remove image"
+                          onClick={() => removeImage(segment.id, image)}
+                          className="absolute top-1 right-1 grid size-5 cursor-pointer place-items-center rounded-full bg-black/65 text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+                        >
+                          <XIcon size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {video && videoSegmentId === segment.id && (
+                  <div className="mt-2">
+                    <div className="relative overflow-hidden rounded-xl border border-line bg-black">
+                      <video
+                        src={video.previewUrl}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className="block max-h-52 w-full object-contain"
+                      />
+                      {/* Floating close badge, matching the popup's video tile. */}
+                      <button
+                        type="button"
+                        onClick={removeVideo}
+                        title="Remove video"
+                        aria-label="Remove video"
+                        className="absolute top-1.5 right-1.5 grid size-6 cursor-pointer place-items-center rounded-full bg-black/65 text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+                      >
+                        <XIcon size={13} />
+                      </button>
+                      {/* Upload progress floats over the clip while bytes move. */}
+                      {videoJob && videoJob.phase !== 'ready' && videoJob.phase !== 'error' && (
+                        <div className="absolute bottom-1.5 left-1.5 max-w-[calc(100%-0.75rem)]">
+                          <VideoUploadPill
+                            job={videoJob}
+                            onRetry={() => video && startVideoUpload(video)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {videoJob?.phase === 'error' && (
+                      <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-danger/40 bg-danger-soft px-2.5 py-2">
+                        <AlertCircleIcon size={14} className="mt-px shrink-0 text-danger" />
+                        <p className="min-w-0 flex-1 text-[11px] leading-snug text-danger">
+                          {videoJob.error}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={removeVideo}
+                          aria-label="Dismiss"
+                          title="Dismiss"
+                          className="grid size-5 shrink-0 cursor-pointer place-items-center rounded-md text-danger/70 transition-colors hover:bg-danger/10 hover:text-danger"
+                        >
+                          <XIcon size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isRoot && (showUseVideo || showUsePhotos) && (
+                  <button
+                    type="button"
+                    onClick={showUseVideo ? swapToVideo : () => void swapToPhotos()}
+                    className="mt-2 inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-lg border border-line px-2.5 text-[11px] font-medium text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                  >
+                    <VideoIcon size={12} />
+                    {showUseVideo ? 'Use the video instead' : 'Use photos instead'}
+                  </button>
+                )}
+
+                {remainingSeg <= 60 && (
+                  <div className="mt-0.5 flex justify-end">
+                    <span
+                      className={cx(
+                        'text-[10px] font-medium tabular-nums',
+                        remainingSeg < 0 ? 'text-danger' : 'text-ink-faint',
+                      )}
+                    >
+                      {remainingSeg}
+                    </span>
+                  </div>
+                )}
               </div>
-            )}
-            {videoJob?.phase === 'error' && (
-              <p className="mt-1.5 text-right text-[11px] leading-snug text-danger">
-                {videoJob.error}
-              </p>
-            )}
-          </div>
+            </div>
+          );
+        })}
+
+        {segments.length < MAX_THREAD_POSTS && (
+          <button
+            type="button"
+            onClick={addSegment}
+            className="ml-[50px] inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-accent transition-colors hover:bg-accent-soft"
+          >
+            <PlusIcon size={13} />
+            {segments.length > 1 ? 'Add another post' : 'Add to thread'}
+          </button>
         )}
 
-        {offer.tweet.video && !videoAllowed && (
-          <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-snug text-ink-faint">
-            <VideoIcon size={12} className="shrink-0" /> Confirm your email on Bluesky to include
-            videos; this posts without it.
-          </p>
-        )}
         {offer.tweet.unportableVideo && (
-          <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-snug text-ink-faint">
-            <VideoIcon size={12} className="shrink-0" /> This video/GIF can’t be carried over.
+          <p className="mt-2 ml-[50px] flex items-center gap-1.5 text-[11px] leading-snug text-ink-faint">
+            <VideoIcon size={12} className="shrink-0" /> The captured video/GIF can’t be carried
+            over; add one below.
           </p>
         )}
-
         {error && (
           <p className="mt-2 flex items-start gap-1.5 text-xs leading-snug text-danger">
             <AlertCircleIcon size={13} className="mt-px shrink-0" />
@@ -601,42 +930,81 @@ function CrossPostCard({
         )}
       </div>
 
-      <div className="mt-3 flex items-center gap-1.5 border-t border-line px-4 py-3">
+      <div className="flex items-center gap-0.5 border-t border-line px-3 py-2.5">
+        <input
+          ref={fileRef}
+          type="file"
+          accept={mediaAccept}
+          multiple
+          hidden
+          onChange={(event) => {
+            if (event.target.files) handlePickedFiles(event.target.files);
+            event.target.value = '';
+          }}
+        />
+        <IconButton
+          title={
+            activeHasVideo
+              ? 'Remove the video to add photos'
+              : canOfferVideo
+                ? 'Add photos or a video to the selected post'
+                : 'Add photos to the selected post'
+          }
+          disabled={mediaDisabled}
+          onClick={() => fileRef.current?.click()}
+        >
+          <ImageIcon size={18} />
+        </IconButton>
+        <IconButton
+          title="Add another post to the thread"
+          disabled={segments.length >= MAX_THREAD_POSTS}
+          onClick={addSegment}
+        >
+          <PlusIcon size={18} />
+        </IconButton>
+
+        <div className="flex-1" />
+
         <button
           type="button"
-          onClick={openFullComposer}
-          title={
-            videoActive
-              ? 'Continue in the Supersky composer (the video stays here)'
-              : 'Continue in the Supersky composer (drafts, GIFs, interaction settings)'
-          }
-          className="h-8 cursor-pointer rounded-lg px-2.5 text-xs font-medium text-accent transition-colors hover:bg-accent-soft"
+          onClick={() => void openFullComposer()}
+          title="Continue in the full Supersky composer"
+          className="h-8 cursor-pointer rounded-lg px-2 text-xs font-medium text-accent transition-colors hover:bg-accent-soft"
         >
           Full composer
         </button>
-        <div className="flex-1" />
-        {remaining < 0 && (
+        {rootOverLimit && splitPreview > 1 && (
           <button
             type="button"
-            onClick={() => setText(truncateToGraphemes(text, MAX_GRAPHEMES))}
+            onClick={splitCardIntoThread}
+            title="Split this text into a thread"
+            className="h-7 shrink-0 cursor-pointer rounded-md bg-accent-soft px-2 text-[11px] font-semibold text-accent transition-[filter] hover:brightness-105"
+          >
+            Thread ({Math.min(splitPreview, MAX_THREAD_POSTS)})
+          </button>
+        )}
+        {rootOverLimit && (
+          <button
+            type="button"
+            onClick={() => updateSegment(rootId, truncateToGraphemes(root.text, MAX_GRAPHEMES))}
             className="h-7 shrink-0 cursor-pointer rounded-md bg-danger-soft px-2 text-[11px] font-semibold text-danger transition-[filter] hover:brightness-105"
           >
             Trim
           </button>
         )}
-        {graphemes > 0 && (
+        {activeGraphemes > 0 && (
           <>
-            {remaining <= 60 && (
+            {activeRemaining <= 60 && (
               <span
                 className={cx(
                   'text-xs font-medium tabular-nums',
-                  remaining < 0 ? 'text-danger' : 'text-ink-muted',
+                  activeRemaining < 0 ? 'text-danger' : 'text-ink-muted',
                 )}
               >
-                {remaining}
+                {activeRemaining}
               </span>
             )}
-            <CharRing graphemes={graphemes} />
+            <CharRing graphemes={activeGraphemes} />
           </>
         )}
         <button
@@ -646,46 +1014,38 @@ function CrossPostCard({
           title={
             videoBlocking
               ? 'Posts once the video finishes uploading'
-              : imagesReady
-                ? 'Post to Bluesky'
-                : 'Preparing images…'
+              : imagesLoading
+                ? 'Preparing images…'
+                : 'Post to Bluesky'
           }
-          className="btn btn-primary relative h-9 rounded-lg px-5 text-[13px]"
+          className="btn btn-primary relative ml-1 h-9 rounded-lg px-4 text-[13px]"
         >
           {phase === 'posting' && (
             <span className="absolute inset-0 grid place-items-center">
               <Spinner size={13} />
             </span>
           )}
-          <span className={cx(phase === 'posting' && 'invisible')}>Post</span>
+          <span className={cx(phase === 'posting' && 'invisible')}>
+            {segments.length > 1 ? `Post all ${segments.length}` : 'Post'}
+          </span>
         </button>
       </div>
     </div>
   );
 }
 
-function MediaChoiceChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cx(
-        'h-7 cursor-pointer rounded-lg border px-2.5 text-xs font-medium transition-colors',
-        active
-          ? 'border-transparent bg-accent-soft text-accent'
-          : 'border-line text-ink-muted hover:bg-surface-2 hover:text-ink',
-      )}
-    >
-      {label}
-    </button>
+/** The signing account's avatar, sized to sit on the thread line. */
+function AccountAvatar({ account }: { account: AccountSnapshot }) {
+  return account.avatar ? (
+    <img
+      src={account.avatar}
+      alt=""
+      className="size-[38px] shrink-0 rounded-full border border-line object-cover"
+    />
+  ) : (
+    <span className="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-[15px] font-semibold text-white">
+      {(account.handle[0] ?? '?').toUpperCase()}
+    </span>
   );
 }
+

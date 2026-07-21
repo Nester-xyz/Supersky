@@ -259,8 +259,6 @@ async function refreshProfileSnapshot(agent: AtpAgent, service: string): Promise
     displayName: profile.data.displayName || undefined,
     avatar: profile.data.avatar || undefined,
     service,
-    // Resume/login keep this fresh on the session; gates video upload in the UI.
-    emailConfirmed: agent.session?.emailConfirmed,
   };
   let changed = false;
   await serialize(async () => {

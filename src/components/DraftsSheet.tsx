@@ -190,6 +190,9 @@ function DraftRow({
             </span>
             <span className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-faint">
               {relativeTime(draft.savedAt)}
+              {(draft.extraPosts?.length ?? 0) > 0 && (
+                <span>Thread · {(draft.extraPosts?.length ?? 0) + 1} posts</span>
+              )}
               {draft.images.length > 0 && (
                 <span className="inline-flex items-center gap-0.5">
                   <ImageIcon size={11} /> {draft.images.length}

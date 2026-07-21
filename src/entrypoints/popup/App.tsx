@@ -52,7 +52,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative flex min-h-[500px] flex-col">
+    <div className="app-shell relative flex min-h-[500px] flex-col">
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
           <LogoMark size={26} />

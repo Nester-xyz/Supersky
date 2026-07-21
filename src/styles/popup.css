@@ -6,6 +6,18 @@ body {
   min-height: 500px;
 }
 
+/* Reply mode hugs its content: the toolbar popup shrinks to fit. */
+html.mode-reply body,
+html.mode-reply .app-shell {
+  min-height: 360px;
+}
+
+/* The detached window can't shrink, so there the shell always fills it and
+   the footer stays pinned to the window's bottom edge (in every mode). */
+html.mode-window .app-shell {
+  min-height: 100vh;
+}
+
 html.mode-window body {
   width: auto;
   min-height: 100vh;
