@@ -44,7 +44,11 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci --no-audit --no-fund
+        # npm install, not npm ci: the committed lockfile is generated on
+        # Windows, where npm prunes the Linux/wasm optional-dependency branch of
+        # @tailwindcss/oxide (@emnapi/*). npm ci strict-checks that tree and
+        # fails on the Linux runner; npm install reconciles it against the lock.
+        run: npm install --no-audit --no-fund
 
       - name: Set version from tag
         id: version
