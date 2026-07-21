@@ -60,8 +60,9 @@ export function truncateToGraphemes(text: string, max: number): string {
   return `${result.trimEnd()}…`;
 }
 
-/** Compose initial post text for a context-menu share. */
+/** Compose initial post text for a context-menu share or cross-post hand-off. */
 export function buildShareText(share: PendingShare): string {
+  if (share.kind === 'crosspost') return share.text ?? '';
   if (share.kind === 'selection') {
     const url = share.url ?? '';
     // Reserve room for quotes, separators, and the URL inside the 300 limit.

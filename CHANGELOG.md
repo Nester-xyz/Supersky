@@ -7,6 +7,16 @@ file; see the commit history for those.
 
 ### Added
 
+- **Cross-post suggestions from X.** After you publish a main post on x.com
+  (never replies, quotes, threads, or community posts), a card in the corner
+  offers to post it on Bluesky too. It expands into a mini composer with the
+  text, images, and even the attached video carried over (uploaded through
+  Bluesky's video service with live progress), a 300-character counter with
+  one-click trim, and a jump into the full Supersky composer. Posts mixing
+  photos and a video get a clear picker, since Bluesky allows one media kind
+  per post. Works only while signed in, reads the post only at the moment you
+  publish it, and can be turned off from the card ("Never") or in settings.
+
 - **Up to 10 images per post.** Matching Bluesky's new limit: up to 4 images
   post as the classic embed every client renders, and 5–10 use Bluesky's new
   gallery embed. Multiple images show as a horizontally scrolling strip of

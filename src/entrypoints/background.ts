@@ -56,6 +56,11 @@ export default defineBackground(() => {
       searchActorsTypeahead(await requireAgent(), query, limit),
     'video:auth': async ({ did }) => beginVideoUpload(await requireAgentForDid(did)),
     'lists:get': async () => fetchMyLists(await requireAgent()),
+    'composer:open': async (share) => {
+      await setPendingShare(share);
+      await openComposer();
+      return null;
+    },
     'notif:refresh': async () => ({ count: await refreshNotifications() }),
     'notif:status': async () => ({ permission: await notificationPermission() }),
     'notif:test': () => sendTestToast(),

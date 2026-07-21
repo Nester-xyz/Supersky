@@ -6,7 +6,9 @@ const THEME_CACHE = 'supersky:theme-cache';
 const ACCENT_CACHE = 'supersky:accent-cache';
 
 export function resolveTheme(pref: ThemePref, systemDark: boolean): 'light' | 'dark' | 'slate' {
-  if (pref === 'system') return systemDark ? 'dark' : 'light';
+  // Following the OS into dark uses Slate (the softer dark) by default; picking
+  // "Dark" explicitly still gets the deeper near-black theme.
+  if (pref === 'system') return systemDark ? 'slate' : 'light';
   return pref;
 }
 

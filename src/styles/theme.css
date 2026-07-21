@@ -55,8 +55,12 @@
  * Deep-navy "night sky" brand palette. The logo tile runs #242b66 -> #0c1030;
  * the dark theme's canvas and surfaces live in that same navy family so the
  * mark sits natively, and the sparkle's indigo + cyan become the accents.
+ *
+ * `:host` alongside `:root` lets these tokens reach shadow-DOM UIs (the
+ * cross-post card injected on x.com), where `:root` never matches.
  */
-:root {
+:root,
+:host {
   --ss-canvas: #eef1fb;
   --ss-surface: #ffffff;
   --ss-surface-2: #e7ebf8;

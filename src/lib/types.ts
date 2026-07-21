@@ -107,10 +107,15 @@ export interface PublishResult {
   handle: string;
 }
 
-/** Payload stashed by the background when the user shares via context menu. */
+/**
+ * Payload stashed by the background when the user shares via context menu, or
+ * hands a just-published X post off to the full composer.
+ */
 export interface PendingShare {
-  kind: 'page' | 'link' | 'selection';
+  kind: 'page' | 'link' | 'selection' | 'crosspost';
   url?: string;
   title?: string;
   text?: string;
+  /** crosspost only: images already compressed to Bluesky's limits. */
+  images?: ComposerImagePayload[];
 }

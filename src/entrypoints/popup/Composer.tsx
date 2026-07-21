@@ -26,7 +26,8 @@ import {
   UsersIcon,
   XIcon,
 } from '@/components/icons';
-import { Avatar, IconButton, Spinner, cx } from '@/components/ui';
+import { Avatar, CharRing, IconButton, Spinner, cx } from '@/components/ui';
+import { VideoUploadPill, type VideoJob } from '@/components/VideoUploadStatus';
 import {
   addSavedDraft,
   clearDraft,
@@ -73,21 +74,13 @@ import {
   uploadVideoFile,
   type PreparedVideo,
 } from '@/lib/video';
-import type { AccountSnapshot, ComposerVideoPayload, LinkCardData } from '@/lib/types';
+import type { AccountSnapshot, LinkCardData } from '@/lib/types';
 
 interface ToastState {
   kind: 'success' | 'error';
   message: string;
   href?: string;
 }
-
-/** Lifecycle of the video pipeline (upload starts the moment it's attached). */
-type VideoJob =
-  | { phase: 'auth'; pct: null }
-  | { phase: 'uploading'; pct: number }
-  | { phase: 'processing'; pct: number | null }
-  | { phase: 'ready'; pct: 100; payload: ComposerVideoPayload }
-  | { phase: 'error'; pct: null; error: string };
 
 type AltTarget =
   | { kind: 'image'; image: PreparedImage }
@@ -192,13 +185,23 @@ export function Composer({
     void (async () => {
       const settings = await loadSettings();
       const share = await takePendingShare();
-      // Everything from the last session comes back: outside clicks close the
-      // popup without warning, so the autosave slot holds the whole draft.
-      const restored = await loadAutosave();
+      // A cross-post hand-off is a deliberate fresh draft and takes the
+      // composer wholesale; otherwise everything from the last session comes
+      // back, since outside clicks close the popup without warning.
+      const crosspost = share?.kind === 'crosspost' ? share : null;
+      const restored = crosspost ? null : await loadAutosave();
       if (!mounted) return;
       setLang(restored?.lang ?? settings.defaultLang);
       setAutoCard(settings.autoLinkCard);
-      if (restored) {
+      if (crosspost?.images?.length) {
+        setImages(
+          crosspost.images.map((image) => ({
+            id: crypto.randomUUID(),
+            ...image,
+            previewUrl: `data:${image.mime};base64,${image.base64}`,
+          })),
+        );
+      } else if (restored) {
         if (restored.images.length > 0) {
           setImages(
             restored.images.map((image) => ({
@@ -992,35 +995,6 @@ export function Composer({
 
 // ---------------------------------------------------------------------------
 
-function CharRing({ graphemes }: { graphemes: number }) {
-  const radius = 8.5;
-  const circumference = 2 * Math.PI * radius;
-  const ratio = Math.min(graphemes / MAX_GRAPHEMES, 1);
-  const color =
-    graphemes > MAX_GRAPHEMES
-      ? 'var(--ss-danger)'
-      : graphemes > MAX_GRAPHEMES - 40
-        ? 'var(--ss-warning)'
-        : 'var(--ss-accent)';
-  return (
-    <svg width={22} height={22} viewBox="0 0 22 22" aria-hidden="true" className="mx-1 shrink-0">
-      <circle cx="11" cy="11" r={radius} stroke="var(--ss-line)" strokeWidth="2.5" fill="none" />
-      <circle
-        cx="11"
-        cy="11"
-        r={radius}
-        stroke={color}
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-        strokeDasharray={`${circumference * ratio} ${circumference}`}
-        transform="rotate(-90 11 11)"
-        style={{ transition: 'stroke-dasharray 120ms linear, stroke 200ms' }}
-      />
-    </svg>
-  );
-}
-
 function LanguagePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <Select
@@ -1354,50 +1328,6 @@ function VideoAttachment({
       </button>
       <RemoveBadge label="Remove video" onClick={onRemove} />
     </div>
-  );
-}
-
-/**
- * The video's upload/processing status, as a pill that floats opposite the
- * interaction pill (rather than sitting over the video), with an inline
- * progress bar while bytes move.
- */
-function VideoUploadPill({ job, onRetry }: { job: VideoJob; onRetry: () => void }) {
-  // Once ready, the pill disappears; the now-enabled Post button is the signal.
-  if (job.phase === 'ready') return null;
-  if (job.phase === 'error') {
-    return (
-      <span className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-danger-soft pr-1 pl-2.5 text-xs font-medium text-danger">
-        <AlertCircleIcon size={13} className="shrink-0" />
-        Upload failed
-        <button
-          type="button"
-          onClick={onRetry}
-          className="flex h-5 cursor-pointer items-center rounded-full bg-danger px-2 text-[11px] font-semibold text-white transition-[filter] hover:brightness-110"
-        >
-          Retry
-        </button>
-      </span>
-    );
-  }
-  const label =
-    job.phase === 'auth' ? 'Preparing' : job.phase === 'uploading' ? 'Uploading video' : 'Processing';
-  return (
-    <span className="inline-flex h-7 shrink-0 items-center gap-2 rounded-full border border-line bg-surface pr-2.5 pl-2.5 text-xs font-medium text-ink">
-      <Spinner size={12} className="text-accent" />
-      <span>{label}</span>
-      {typeof job.pct === 'number' && (
-        <>
-          <span className="block h-1 w-10 overflow-hidden rounded-full bg-surface-3">
-            <span
-              className="block h-full rounded-full bg-accent transition-[width] duration-200"
-              style={{ width: `${job.pct}%` }}
-            />
-          </span>
-          <span className="tabular-nums text-ink-muted">{job.pct}%</span>
-        </>
-      )}
-    </span>
   );
 }
 

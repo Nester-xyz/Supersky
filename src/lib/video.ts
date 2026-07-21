@@ -256,7 +256,7 @@ function friendlyVideoError(status: VideoJobStatus | null | undefined): string |
   const raw = status?.message || status?.error;
   if (!raw) return null;
   if (/unauthenticated|unauthorized/i.test(raw)) {
-    return 'The video service rejected the upload session. Reopen the popup and try again.';
+    return 'The video service rejected the upload session. Please try again.';
   }
   return raw;
 }

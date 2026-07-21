@@ -10,6 +10,8 @@ export interface Settings {
   defaultLang: string;
   /** Automatically turn the first URL in a post into a link card. */
   autoLinkCard: boolean;
+  /** After posting on X, offer to cross-post it to Bluesky. */
+  suggestCrossPost: boolean;
   /** Show the unread-notifications count on the toolbar icon. */
   showBadge: boolean;
   /** Pop a desktop banner when the active account gets new notifications. */
@@ -25,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   accent: DEFAULT_ACCENT,
   defaultLang: 'en',
   autoLinkCard: true,
+  suggestCrossPost: true,
   showBadge: true,
   showBanners: true,
   service: DEFAULT_SERVICE,
@@ -41,6 +44,10 @@ export function normalizeSettings(value: unknown): Settings {
     defaultLang: typeof raw.defaultLang === 'string' ? raw.defaultLang : DEFAULT_SETTINGS.defaultLang,
     autoLinkCard:
       typeof raw.autoLinkCard === 'boolean' ? raw.autoLinkCard : DEFAULT_SETTINGS.autoLinkCard,
+    suggestCrossPost:
+      typeof raw.suggestCrossPost === 'boolean'
+        ? raw.suggestCrossPost
+        : DEFAULT_SETTINGS.suggestCrossPost,
     showBadge: typeof raw.showBadge === 'boolean' ? raw.showBadge : DEFAULT_SETTINGS.showBadge,
     showBanners:
       typeof raw.showBanners === 'boolean' ? raw.showBanners : DEFAULT_SETTINGS.showBanners,

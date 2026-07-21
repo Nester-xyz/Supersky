@@ -1,7 +1,40 @@
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { MAX_GRAPHEMES } from '@/lib/text';
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
+}
+
+// ---------------------------------------------------------------------------
+
+/** The 300-grapheme budget ring shared by the popup and cross-post composers. */
+export function CharRing({ graphemes }: { graphemes: number }) {
+  const radius = 8.5;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = Math.min(graphemes / MAX_GRAPHEMES, 1);
+  const color =
+    graphemes > MAX_GRAPHEMES
+      ? 'var(--ss-danger)'
+      : graphemes > MAX_GRAPHEMES - 40
+        ? 'var(--ss-warning)'
+        : 'var(--ss-accent)';
+  return (
+    <svg width={22} height={22} viewBox="0 0 22 22" aria-hidden="true" className="mx-1 shrink-0">
+      <circle cx="11" cy="11" r={radius} stroke="var(--ss-line)" strokeWidth="2.5" fill="none" />
+      <circle
+        cx="11"
+        cy="11"
+        r={radius}
+        stroke={color}
+        strokeWidth="2.5"
+        fill="none"
+        strokeLinecap="round"
+        strokeDasharray={`${circumference * ratio} ${circumference}`}
+        transform="rotate(-90 11 11)"
+        style={{ transition: 'stroke-dasharray 120ms linear, stroke 200ms' }}
+      />
+    </svg>
+  );
 }
 
 // ---------------------------------------------------------------------------

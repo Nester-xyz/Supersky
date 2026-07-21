@@ -7,6 +7,7 @@ import type {
   LinkCardData,
   ListSuggestion,
   LoginRequest,
+  PendingShare,
   PublishRequest,
   PublishResult,
 } from './types';
@@ -31,6 +32,8 @@ export interface MessageContracts {
   'video:auth': { input: { did: string }; output: { token: string } };
   /** The active account's curated lists, for threadgate list rules. */
   'lists:get': { input: undefined; output: ListSuggestion[] };
+  /** Stash a pending share and open the composer popup (cross-post hand-off). */
+  'composer:open': { input: PendingShare; output: null };
   /** Poll now and report the unread count (null when signed out/unknown). */
   'notif:refresh': { input: undefined; output: { count: number | null } };
   /** Chrome-level banner permission; 'unknown' where the API is unsupported. */

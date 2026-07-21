@@ -140,6 +140,11 @@
       <td data-label="Where it's stored / sent">Read from the active tab only when you trigger it, and included in a post only if you publish it. Never logged or tracked.</td>
     </tr>
     <tr>
+      <td>Posts you publish on X (text, attached images, and video)</td>
+      <td data-label="Why it's handled">With the optional cross-post suggestion on, publishing a main post on x.com pops a small "Post this on Bluesky too?" card pre-filled with that post.</td>
+      <td data-label="Where it's stored / sent">Read locally in your browser, only at the moment you publish on X, and only for main posts (never replies, quotes, or messages). Sent to Bluesky only if you confirm (videos upload to <code>video.bsky.app</code> for processing); discarded otherwise. The suggestion can be turned off in settings or from the card itself.</td>
+    </tr>
+    <tr>
       <td>Link URLs (for previews)</td>
       <td data-label="Why it's handled">To show a rich link card, the first URL in your draft is sent to Bluesky's card service.</td>
       <td data-label="Where it's stored / sent">Sent to <code>cardyb.bsky.app</code> (a Bluesky service) to generate the preview.</td>
@@ -168,7 +173,7 @@
 <ul>
   <li>No analytics, telemetry, tracking pixels, or fingerprinting.</li>
   <li>No ads and no sale of data.</li>
-  <li>No collection of your browsing history. The extension reads a page only when you invoke a share action or open the composer.</li>
+  <li>No collection of your browsing history. The extension reads a page only when you invoke a share action, open the composer, or (if the cross-post suggestion is on) publish a post on x.com.</li>
   <li>Nothing is ever sent to the developer. There is no server on our side.</li>
 </ul>
 
@@ -181,7 +186,7 @@
 </ul>
 
 <h2>Permissions</h2>
-<p>Supersky requests only what its features need: <code>storage</code> and <code>unlimitedStorage</code> (save settings, drafts — including their images — and sessions locally), <code>alarms</code> (check your unread notification count in the background), <code>contextMenus</code> (the right-click "Share on Bluesky" items), <code>activeTab</code> (read the current page's URL and title when you share it), <code>notifications</code> (desktop banners for new activity), and host access to <code>cardyb.bsky.app</code>, <code>cdn.bsky.app</code>, <code>gifs.bsky.app</code>, and <code>video.bsky.app</code> (Bluesky's link preview, image, GIF, and video services). There is no blanket access to the pages you visit; the extension only touches a page at the moment you share it.</p>
+<p>Supersky requests only what its features need: <code>storage</code> and <code>unlimitedStorage</code> (save settings, drafts — including their images — and sessions locally), <code>alarms</code> (check your unread notification count in the background), <code>contextMenus</code> (the right-click "Share on Bluesky" items), <code>activeTab</code> (read the current page's URL and title when you share it), <code>notifications</code> (desktop banners for new activity), and host access to <code>cardyb.bsky.app</code>, <code>cdn.bsky.app</code>, <code>gifs.bsky.app</code>, and <code>video.bsky.app</code> (Bluesky's link preview, image, GIF, and video services). The cross-post suggestion additionally runs on <code>x.com</code> and <code>twitter.com</code> only, solely to notice when you publish a main post there and offer to share it on Bluesky. There is no blanket access to other pages you visit; the extension only touches a page at the moment you share or publish from it.</p>
 
 <h2>Children's privacy</h2>
 <p>Supersky is not aimed at children under 13 (or the minimum age of digital consent where you live) and does not knowingly collect their data. Bluesky account eligibility is governed by Bluesky's own terms.</p>

@@ -681,6 +681,18 @@ function PostingPanel({
           />
         </SettingRow>
       </Group>
+      <Group>
+        <SettingRow
+          title="Suggest cross-posting from X"
+          description="After you post on X, offer to share the same post on Bluesky. Only reads a post when you publish it, and only on x.com."
+        >
+          <Switch
+            checked={settings.suggestCrossPost}
+            onChange={(v) => update({ suggestCrossPost: v })}
+            label="Suggest cross-posting from X"
+          />
+        </SettingRow>
+      </Group>
     </Panel>
   );
 }
