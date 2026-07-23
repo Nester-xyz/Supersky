@@ -20,11 +20,18 @@ import {
 import { broadcastAuthChanged, registerHandlers } from '@/lib/messaging';
 import { loadSettings, watchSettings } from '@/lib/settings';
 import { setPendingShare } from '@/lib/share';
+import { LAST_COUNT_KEY } from '@/lib/unread-cache';
 import { postWebUrl } from '@/lib/urls';
-import type { PendingShare, PublishRequest, PublishResult } from '@/lib/types';
+import type {
+  NotificationAuthor,
+  NotificationItem,
+  NotificationPage,
+  PendingShare,
+  PublishRequest,
+  PublishResult,
+} from '@/lib/types';
 
 const BADGE_ALARM = 'supersky:badge';
-const LAST_COUNT_KEY = 'supersky:badge-count';
 const NOTIFIED_AT_KEY = 'supersky:notified-at';
 /** Id for the grouped "N new notifications" toast; individual toasts use their
  * target URL as the id (clicking resolves it without any lookup). */
@@ -62,6 +69,17 @@ export default defineBackground(() => {
       return null;
     },
     'notif:refresh': async () => ({ count: await refreshNotifications() }),
+    'notif:list': async ({ cursor, filter }) =>
+      listNotificationPage(await requireAgent(), cursor, filter),
+    'notif:seen': async () => {
+      const agent = await requireAgent();
+      await agent.app.bsky.notification.updateSeen({ seenAt: new Date().toISOString() });
+      return { count: await refreshNotifications() };
+    },
+    'graph:follow': async ({ did }) => {
+      await (await requireAgent()).follow(did);
+      return null;
+    },
     'notif:status': async () => ({ permission: await notificationPermission() }),
     'notif:test': () => sendTestToast(),
   });
@@ -379,6 +397,152 @@ function toastUrl(did: string, item: NotificationView): string {
     default:
       return NOTIFICATIONS_URL;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Notifications panel: grouped pages for the popup's inbox
+// ---------------------------------------------------------------------------
+
+/** Reasons that collapse into one row when they share a subject. */
+const GROUPABLE_REASONS = new Set([
+  'like',
+  'repost',
+  'like-via-repost',
+  'repost-via-repost',
+  'follow',
+]);
+/** Reasons whose row shows the author's own post text and offers Reply. */
+const CONVERSATION_REASONS = new Set(['reply', 'mention', 'quote']);
+/** How many avatars a grouped row shows before "and N others". */
+const MAX_GROUP_AUTHORS = 3;
+const NOTIF_PAGE_LIMIT = 40;
+
+/**
+ * One page of the active account's notifications, grouped for the panel.
+ * Subject posts (the post of yours they liked/reposted) are hydrated in one
+ * getPosts batch so rows can quote them; failures just drop the snippets.
+ */
+async function listNotificationPage(
+  agent: AtpAgent,
+  cursor?: string,
+  filter?: 'all' | 'mentions',
+): Promise<NotificationPage> {
+  const did = agent.session?.did ?? '';
+  const [response, unread] = await Promise.all([
+    agent.app.bsky.notification.listNotifications({
+      limit: NOTIF_PAGE_LIMIT,
+      cursor,
+      // The same reasons the official app's Mentions tab requests.
+      ...(filter === 'mentions' ? { reasons: [...CONVERSATION_REASONS] } : {}),
+    }),
+    agent.app.bsky.notification
+      .getUnreadCount()
+      .then((r) => r.data.count)
+      .catch(() => 0),
+  ]);
+
+  // Group in arrival order: each groupable reason+subject pair keeps one
+  // bucket, so "5 likes on the same post" is one row wearing five authors.
+  const groups: NotificationView[][] = [];
+  const buckets = new Map<string, NotificationView[]>();
+  for (const item of response.data.notifications) {
+    if (!GROUPABLE_REASONS.has(item.reason)) {
+      groups.push([item]);
+      continue;
+    }
+    const key = `${item.reason} ${item.reasonSubject ?? ''}`;
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      const fresh = [item];
+      buckets.set(key, fresh);
+      groups.push(fresh);
+    }
+  }
+
+  const subjectUris = new Set<string>();
+  for (const group of groups) {
+    const first = group[0];
+    if (first?.reasonSubject && !CONVERSATION_REASONS.has(first.reason)) {
+      subjectUris.add(first.reasonSubject);
+    }
+  }
+  const subjects = await fetchPostTexts(agent, [...subjectUris]);
+
+  return {
+    items: groups.flatMap((group) => {
+      const newest = group[0];
+      return newest ? [toNotificationItem(did, newest, group, subjects)] : [];
+    }),
+    cursor: response.data.cursor,
+    unread,
+  };
+}
+
+/** Post texts by AT-URI via getPosts (25 per call); empty map on failure. */
+async function fetchPostTexts(agent: AtpAgent, uris: string[]): Promise<Map<string, string>> {
+  const texts = new Map<string, string>();
+  for (let i = 0; i < uris.length; i += 25) {
+    try {
+      const response = await agent.app.bsky.feed.getPosts({ uris: uris.slice(i, i + 25) });
+      for (const post of response.data.posts) {
+        const record = post.record as { text?: unknown };
+        if (typeof record?.text === 'string') texts.set(post.uri, record.text);
+      }
+    } catch {
+      // Deleted posts or a flaky fetch: rows render without the quote.
+    }
+  }
+  return texts;
+}
+
+function toNotificationItem(
+  did: string,
+  newest: NotificationView,
+  group: NotificationView[],
+  subjects: Map<string, string>,
+): NotificationItem {
+  const authors: NotificationAuthor[] = [];
+  const seen = new Set<string>();
+  for (const event of group) {
+    if (seen.has(event.author.did)) continue;
+    seen.add(event.author.did);
+    authors.push({
+      did: event.author.did,
+      handle: event.author.handle,
+      displayName: event.author.displayName?.trim() || undefined,
+      avatar: event.author.avatar || undefined,
+    });
+  }
+  const record = newest.record as { text?: unknown } | undefined;
+  const text = typeof record?.text === 'string' ? record.text : undefined;
+
+  const item: NotificationItem = {
+    id: newest.uri,
+    reason: newest.reason,
+    authors: authors.slice(0, MAX_GROUP_AUTHORS),
+    othersCount: Math.max(0, authors.length - MAX_GROUP_AUTHORS),
+    isRead: group.every((event) => event.isRead),
+    indexedAt: newest.indexedAt,
+    url: toastUrl(did, newest),
+  };
+  if (CONVERSATION_REASONS.has(newest.reason)) {
+    item.text = text;
+    item.replyTo = {
+      uri: newest.uri,
+      handle: newest.author.handle,
+      displayName: newest.author.displayName?.trim() || undefined,
+      avatar: newest.author.avatar || undefined,
+      text: text ?? '',
+    };
+  } else if (newest.reasonSubject) {
+    item.subjectText = subjects.get(newest.reasonSubject);
+  }
+  if (newest.reason === 'follow') {
+    item.followedByViewer = Boolean(newest.author.viewer?.following);
+  }
+  return item;
 }
 
 /** Banners that are conversations get a one-click Reply action (Chrome only). */

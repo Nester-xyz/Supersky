@@ -12,6 +12,23 @@ html.mode-reply .app-shell {
   min-height: 360px;
 }
 
+/* Notifications panel: a fixed stage so the list scrolls inside the popup
+   instead of the popup growing with it. */
+html.panel-notifs body {
+  height: 560px;
+}
+html.panel-notifs .app-shell {
+  height: 560px;
+  min-height: 0;
+}
+
+/* The detached window sizes itself; there the shell just fills it as usual. */
+html.mode-window.panel-notifs body,
+html.mode-window.panel-notifs .app-shell {
+  height: auto;
+  min-height: 100vh;
+}
+
 /* The detached window can't shrink, so there the shell always fills it and
    the footer stays pinned to the window's bottom edge (in every mode). */
 html.mode-window .app-shell {

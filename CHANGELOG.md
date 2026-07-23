@@ -3,6 +3,21 @@
 Notable user-facing changes to Supersky. Releases before 0.1.2 predate this
 file; see the commit history for those.
 
+## Unreleased
+
+### Added
+
+- **Notifications in the popup.** A bell in the header, wearing the same unread
+  count as the toolbar badge, flips the composer into a full notifications
+  inbox: likes, reposts, replies, mentions, quotes, and follows, split into
+  All and Mentions exactly like the official app. Likes, reposts, and follows
+  of the same post collapse into one row ("Riya and 3 others liked your post")
+  with stacked avatars, and rows quote the post of yours they're reacting to.
+  Follow rows offer a one-click Follow back, and the list keeps loading as
+  you scroll. Opening the inbox marks everything seen so the badge clears,
+  unread rows keep their tint for the visit, and clicking any row opens the
+  right post or profile on bsky.app.
+
 ## 0.2.0 (2026-07-21)
 
 ### Added

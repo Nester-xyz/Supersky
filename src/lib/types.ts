@@ -120,6 +120,54 @@ export interface PublishResult {
   handle: string;
 }
 
+/** One person behind a notification row (grouped rows carry a few). */
+export interface NotificationAuthor {
+  did: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+}
+
+/**
+ * One row in the popup's notifications panel. Likes, reposts, and follows of
+ * the same subject are grouped into a single row ("Riya and 3 others…").
+ */
+export interface NotificationItem {
+  /** AT-URI of the newest event in the group; stable enough for React keys. */
+  id: string;
+  reason: string;
+  /** Authors shown on the row (newest first); the rest are counted. */
+  authors: NotificationAuthor[];
+  othersCount: number;
+  /** True only when every event in the group has been seen. */
+  isRead: boolean;
+  /** indexedAt of the newest event in the group. */
+  indexedAt: string;
+  /** Their words: the reply/quote/mention post text. */
+  text?: string;
+  /** Your words: the post of yours they liked/reposted/replied to. */
+  subjectText?: string;
+  /** bsky.app deep link the row opens. */
+  url: string;
+  /** reply/quote/mention rows: everything the composer's reply mode needs. */
+  replyTo?: {
+    uri: string;
+    handle: string;
+    displayName?: string;
+    avatar?: string;
+    text: string;
+  };
+  /** follow rows: whether the active account already follows them back. */
+  followedByViewer?: boolean;
+}
+
+/** A page of grouped notifications plus the unread count at fetch time. */
+export interface NotificationPage {
+  items: NotificationItem[];
+  cursor?: string;
+  unread: number;
+}
+
 /**
  * Payload stashed by the background when the user shares via context menu,
  * hands a just-published X post off to the full composer, or replies to a

@@ -1,34 +1,109 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { CheckIcon, LogOutIcon, SlidersIcon, UserRoundPlusIcon } from '@/components/icons';
+import {
+  ArrowLeftIcon,
+  BellIcon,
+  CheckCheckIcon,
+  CheckIcon,
+  LogOutIcon,
+  SlidersIcon,
+  UserRoundPlusIcon,
+} from '@/components/icons';
 import { LogoMark, Wordmark } from '@/components/Logo';
-import { Avatar } from '@/components/ui';
+import { NotificationsPanel } from '@/components/NotificationsPanel';
+import { Avatar, IconButton, cx } from '@/components/ui';
 import { readAuthSnapshot, writeAuthCache } from '@/lib/auth-cache';
 import { onAuthChanged, sendMessage } from '@/lib/messaging';
+import {
+  onPolledUnreadChanged,
+  readPolledUnread,
+  readUnreadSnapshot,
+  writeUnreadCache,
+} from '@/lib/unread-cache';
 import { MAX_ACCOUNTS, type AccountSnapshot, type AuthState } from '@/lib/types';
 import { Composer } from './Composer';
 
 type ViewState = 'loading' | AuthState;
+type Panel = 'compose' | 'notifications';
 
 export default function App() {
   // Seed from the last-known account so the composer paints on the first frame
   // instead of flashing blank while the background session is queried.
   const [view, setView] = useState<ViewState>(() => readAuthSnapshot() ?? 'loading');
+  const [panel, setPanel] = useState<Panel>('compose');
+  /** Live unread count worn by the header bell. Seeded synchronously from the
+   * last-known value so the dot paints on the first frame; the background's
+   * polled count and then a fresh fetch reconcile it moments later. */
+  const [unread, setUnreadState] = useState(() => readUnreadSnapshot());
+  const setUnread = useCallback((count: number) => {
+    setUnreadState(count);
+    writeUnreadCache(count);
+  }, []);
+  /** What the panel walked in on; shown beside its title for the visit. */
+  const [panelUnread, setPanelUnread] = useState(0);
+  /** Whether the panel's current list is empty (tick then just goes home). */
+  const [panelEmpty, setPanelEmpty] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     sendMessage('auth:get-state', undefined)
       .then((state) => mounted && setView(state))
       .catch(() => mounted && setView({ status: 'signed-out' }));
+    // The background poller's stored count is milliseconds away; adopt it
+    // before the network answers so the dot never waits on a fetch.
+    void readPolledUnread().then((count) => {
+      if (mounted && typeof count === 'number') setUnread(count);
+    });
     // Opening the popup is a natural moment to reconcile the toolbar badge.
     // Fire-and-forget so a slow network never delays the composer.
-    void sendMessage('notif:refresh', undefined).catch(() => undefined);
+    sendMessage('notif:refresh', undefined)
+      .then(({ count }) => {
+        if (mounted && typeof count === 'number') setUnread(count);
+      })
+      .catch(() => undefined);
+    // And while the popup sits open, ride along with the poller's updates.
+    const unsubscribeUnread = onPolledUnreadChanged(setUnread);
     const unsubscribe = onAuthChanged((state) => setView(state));
     return () => {
       mounted = false;
       unsubscribe();
+      unsubscribeUnread();
     };
-  }, []);
+  }, [setUnread]);
+
+  // The panel needs a fixed stage so its list scrolls; popup.css keys off this.
+  useEffect(() => {
+    document.documentElement.classList.toggle('panel-notifs', panel === 'notifications');
+  }, [panel]);
+
+  // The panel reports the unread count it fetched, then marks it seen, so the
+  // bell goes quiet while the panel chip keeps the number for this visit.
+  const handleLoaded = useCallback(
+    (info: { unread: number; empty: boolean }) => {
+      setPanelUnread(info.unread);
+      setPanelEmpty(info.empty);
+      setUnread(0);
+    },
+    [setUnread],
+  );
+
+  function openPanel() {
+    setPanelUnread(0);
+    setPanelEmpty(false);
+    setPanel('notifications');
+  }
+
+  function markAllRead() {
+    setUnread(0);
+    // Nothing left to acknowledge (empty inbox or all rows already read):
+    // the tick doubles as "done here, back to writing".
+    if (panelEmpty || panelUnread === 0) {
+      setPanel('compose');
+      return;
+    }
+    setPanelUnread(0);
+    window.dispatchEvent(new Event('supersky:mark-all-read'));
+  }
 
   // Mirror auth state to the synchronous cache the popup reads on next open,
   // and, if signed out, hand off to the settings page (which hosts sign-in)
@@ -51,31 +126,79 @@ export default function App() {
     return <div className="min-h-[100px]" aria-hidden="true" />;
   }
 
+  const inNotifications = panel === 'notifications';
+
   return (
     <div className="app-shell relative flex min-h-[500px] flex-col">
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <div className="flex items-center gap-2">
-          <LogoMark size={26} />
-          <Wordmark />
-        </div>
+        {inNotifications ? (
+          <div className="flex min-w-0 items-center gap-1">
+            <IconButton
+              title="Back to composer"
+              className="-ml-1.5"
+              onClick={() => setPanel('compose')}
+            >
+              <ArrowLeftIcon size={17} />
+            </IconButton>
+            <span className="text-[15px] font-extrabold text-ink">Notifications</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <LogoMark size={26} />
+            <Wordmark />
+          </div>
+        )}
         {account && (
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              title="Open drafts"
-              // The composer owns the drafts sheet; the header just knocks.
-              onClick={() => window.dispatchEvent(new Event('supersky:open-drafts'))}
-              className="flex h-7 cursor-pointer items-center rounded-full px-2.5 text-[13px] font-semibold text-accent transition-colors hover:bg-accent-soft"
-            >
-              Drafts
-            </button>
+            {inNotifications ? (
+              <IconButton
+                title={panelUnread > 0 ? 'Mark all as read' : 'Back to composer'}
+                onClick={markAllRead}
+              >
+                <CheckCheckIcon size={17} />
+              </IconButton>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  title="Open drafts"
+                  // The composer owns the drafts sheet; the header just knocks.
+                  onClick={() => window.dispatchEvent(new Event('supersky:open-drafts'))}
+                  className="flex h-7 cursor-pointer items-center rounded-full px-2.5 text-[13px] font-semibold text-accent transition-colors hover:bg-accent-soft"
+                >
+                  Drafts
+                </button>
+                <IconButton
+                  title={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
+                  className="relative"
+                  onClick={openPanel}
+                >
+                  <BellIcon size={18} strokeWidth={1.5} />
+                  {unread > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-[5px] right-[6px] size-[7px] rounded-full bg-[var(--ss-primary)]"
+                    />
+                  )}
+                </IconButton>
+              </>
+            )}
             <AccountSwitcher account={account} accounts={accounts} />
           </div>
         )}
       </header>
 
-      <main className="flex flex-1 flex-col">
-        {account && <Composer account={account} accounts={accounts} />}
+      <main className="flex min-h-0 flex-1 flex-col">
+        {account && (
+          // The composer never unmounts: drafts, attachments, and the reply
+          // listener survive trips into the notifications panel.
+          <div className={cx('flex min-h-0 flex-1 flex-col', inNotifications && 'hidden')}>
+            <Composer account={account} accounts={accounts} />
+          </div>
+        )}
+        {account && inNotifications && (
+          <NotificationsPanel key={account.did} onLoaded={handleLoaded} />
+        )}
       </main>
     </div>
   );

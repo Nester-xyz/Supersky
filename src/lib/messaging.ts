@@ -7,6 +7,7 @@ import type {
   LinkCardData,
   ListSuggestion,
   LoginRequest,
+  NotificationPage,
   PendingShare,
   PublishRequest,
   PublishResult,
@@ -36,6 +37,19 @@ export interface MessageContracts {
   'composer:open': { input: PendingShare; output: null };
   /** Poll now and report the unread count (null when signed out/unknown). */
   'notif:refresh': { input: undefined; output: { count: number | null } };
+  /**
+   * A grouped page of the active account's notifications for the panel.
+   * `filter: 'mentions'` narrows to conversations (replies, mentions, quotes)
+   * server-side, matching the official app's All | Mentions split.
+   */
+  'notif:list': {
+    input: { cursor?: string; filter?: 'all' | 'mentions' };
+    output: NotificationPage;
+  };
+  /** Mark everything read (updateSeen), then reconcile the toolbar badge. */
+  'notif:seen': { input: undefined; output: { count: number | null } };
+  /** Follow an account back from a follow notification. */
+  'graph:follow': { input: { did: string }; output: null };
   /** Chrome-level banner permission; 'unknown' where the API is unsupported. */
   'notif:status': { input: undefined; output: { permission: 'granted' | 'denied' | 'unknown' } };
   /** Fire a sample banner so the user can verify OS-level delivery. */

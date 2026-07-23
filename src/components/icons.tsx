@@ -142,6 +142,8 @@ export const ArrowRightIcon = createIcon(
 
 export const ChevronRightIcon = createIcon('ChevronRightIcon', <path d="m9 18 6-6-6-6" />);
 
+export const ChevronLeftIcon = createIcon('ChevronLeftIcon', <path d="m15 18-6-6 6-6" />);
+
 export const AtSignIcon = createIcon(
   'AtSignIcon',
   <>
@@ -244,11 +246,50 @@ export const ContrastIcon = createIcon(
   </>,
 );
 
+/* Notification reason chips follow Lucide's geometry (lucide.dev, ISC); the
+ * bell itself is Heroicons' (heroicons.com, MIT), picked by hand for the
+ * header. Everything else stays hand-drawn. */
+
 export const BellIcon = createIcon(
   'BellIcon',
+  <path d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />,
+);
+
+export const HeartIcon = createIcon(
+  'HeartIcon',
+  <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />,
+  true,
+);
+
+export const RepeatIcon = createIcon(
+  'RepeatIcon',
   <>
-    <path d="M18 8a6 6 0 0 0-12 0c0 4.2-1.3 5.6-2.6 7a1 1 0 0 0 .74 1.7h15.72a1 1 0 0 0 .74-1.7C19.3 13.6 18 12.2 18 8Z" />
-    <path d="M10.3 20.6a2 2 0 0 0 3.4 0" />
+    <path d="m2 9 3-3 3 3" />
+    <path d="M13 18H7a2 2 0 0 1-2-2V6" />
+    <path d="m22 15-3 3-3-3" />
+    <path d="M11 6h6a2 2 0 0 1 2 2v10" />
+  </>,
+);
+
+export const ReplyFillIcon = createIcon(
+  'ReplyFillIcon',
+  <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />,
+  true,
+);
+
+export const CheckCheckIcon = createIcon(
+  'CheckCheckIcon',
+  <>
+    <path d="M18 6 7 17l-5-5" />
+    <path d="m22 10-7.5 7.5L13 16" />
+  </>,
+);
+
+export const ArrowLeftIcon = createIcon(
+  'ArrowLeftIcon',
+  <>
+    <path d="m12 19-7-7 7-7" />
+    <path d="M19 12H5" />
   </>,
 );
 

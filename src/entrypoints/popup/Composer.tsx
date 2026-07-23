@@ -385,6 +385,26 @@ export function Composer({
     return () => window.removeEventListener('supersky:open-drafts', open);
   }, []);
 
+  // Reply pressed in the notifications panel: adopt their post as the reply
+  // context, exactly like a banner reply (fresh draft, focused input).
+  useEffect(() => {
+    const onReply = (event: Event) => {
+      const detail = (event as CustomEvent<ReplyContext | undefined>).detail;
+      if (!detail?.uri) return;
+      setReplyCtx({
+        uri: detail.uri,
+        handle: detail.handle,
+        displayName: detail.displayName,
+        avatar: detail.avatar,
+        snippet: detail.snippet ?? '',
+      });
+      setText('');
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    };
+    window.addEventListener('supersky:reply-share', onReply);
+    return () => window.removeEventListener('supersky:reply-share', onReply);
+  }, []);
+
   // Reply mode tells the page shell to hug its content instead of holding the
   // full composer height.
   useEffect(() => {
