@@ -1,6 +1,0 @@
-/*
- * Styles for the cross-post UI injected on x.com. Everything renders inside a
- * closed-off shadow root, and theme.css exposes its tokens via :host, so the
- * card looks exactly like the rest of Supersky without touching X's styles.
- */
-@import '../../styles/theme.css';

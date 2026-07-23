@@ -104,6 +104,21 @@ export interface PublishRequest {
   dids?: string[];
 }
 
+/**
+ * A snapshot of a post the user just published on another network (X,
+ * Threads), scraped from that site's composer for the cross-post suggestion.
+ * Source-neutral so one card can mirror any network to Bluesky.
+ */
+export interface CapturedPost {
+  text: string;
+  /** Image attachments, recovered from the composer's blob previews. */
+  images: Blob[];
+  /** The first user-attached video, when its bytes were recoverable. */
+  video: Blob | null;
+  /** A video/GIF existed whose bytes could not be carried over. */
+  unportableVideo: boolean;
+}
+
 /** A user list surfaced in the interaction-settings sheet. */
 export interface ListSuggestion {
   uri: string;

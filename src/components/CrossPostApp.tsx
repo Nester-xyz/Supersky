@@ -33,12 +33,13 @@ import {
   uploadVideoFile,
   type PreparedVideo,
 } from '@/lib/video';
-import { watchForMainTweets, type CapturedTweet } from '@/lib/xdetect';
 import {
   MAX_THREAD_POSTS,
   type AccountSnapshot,
+  type CapturedPost,
   type ComposerImagePayload,
 } from '@/lib/types';
+import './crosspost.css';
 
 /** Largest video (bytes) we hand off to the popup through storage. */
 const HANDOFF_VIDEO_MAX = 40_000_000;
@@ -48,7 +49,7 @@ const TOAST_LIFETIME_MS = 12_000;
 
 interface Offer {
   id: string;
-  tweet: CapturedTweet;
+  post: CapturedPost;
   account: AccountSnapshot;
 }
 
@@ -59,7 +60,15 @@ interface Offer {
  * Bluesky's video service from here (its CORS is open) with a token minted by
  * the background.
  */
-export function CrossPostApp() {
+export function CrossPostApp({
+  watch,
+  videoName,
+}: {
+  /** The source-site detector: fires whenever a main post is published there. */
+  watch: (onPosted: (post: CapturedPost) => void) => () => void;
+  /** Filename for a captured video handed to the composer or uploader. */
+  videoName: string;
+}) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches,
@@ -91,17 +100,17 @@ export function CrossPostApp() {
   // Detection runs for the page's lifetime; each confirmed main post becomes
   // an offer, provided the feature is on and an account is signed in.
   useEffect(() => {
-    return watchForMainTweets((tweet) => {
+    return watch((post) => {
       void (async () => {
         const current = await loadSettings();
         if (!current.suggestCrossPost) return;
         const auth = await sendMessage('auth:get-state', undefined).catch(() => null);
         if (!auth || auth.status !== 'signed-in') return;
-        setOffer({ id: crypto.randomUUID(), tweet, account: auth.account });
+        setOffer({ id: crypto.randomUUID(), post, account: auth.account });
         setMode('toast');
       })();
     });
-  }, []);
+  }, [watch]);
 
   // The collapsed toast withdraws by itself; the expanded card stays put.
   useEffect(() => {
@@ -130,6 +139,7 @@ export function CrossPostApp() {
             key={offer.id}
             offer={offer}
             defaultLang={settings.defaultLang}
+            videoName={videoName}
             autoPost={mode === 'auto'}
             onClose={dismiss}
           />
@@ -140,7 +150,7 @@ export function CrossPostApp() {
               // One-click only when the preview can post as-is; anything that
               // needs work (over the limit, video to upload) opens the editor.
               const needsEditor =
-                graphemeLength(offer.tweet.text) > MAX_GRAPHEMES || Boolean(offer.tweet.video);
+                graphemeLength(offer.post.text) > MAX_GRAPHEMES || Boolean(offer.post.video);
               setMode(needsEditor ? 'edit' : 'auto');
             }}
             onEdit={() => setMode('edit')}
@@ -171,7 +181,7 @@ function Toast({
 }) {
   // Thumbnails come straight from the captured bytes.
   const thumbs = useMemo(
-    () => offer.tweet.images.slice(0, 4).map((blob) => URL.createObjectURL(blob)),
+    () => offer.post.images.slice(0, 4).map((blob) => URL.createObjectURL(blob)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [offer.id],
   );
@@ -179,8 +189,8 @@ function Toast({
     return () => thumbs.forEach((url) => URL.revokeObjectURL(url));
   }, [thumbs]);
 
-  const text = offer.tweet.text
-    ? truncateToGraphemes(offer.tweet.text.replace(/\s+/g, ' '), 160)
+  const text = offer.post.text
+    ? truncateToGraphemes(offer.post.text.replace(/\s+/g, ' '), 160)
     : '';
 
   return (
@@ -234,7 +244,7 @@ function Toast({
           {text && (
             <p className="mt-1 line-clamp-3 text-[13px] leading-snug text-ink-muted">{text}</p>
           )}
-          {(thumbs.length > 0 || offer.tweet.video) && (
+          {(thumbs.length > 0 || offer.post.video) && (
             <div className="mt-2 flex gap-1.5">
               {thumbs.map((url) => (
                 <img
@@ -244,7 +254,7 @@ function Toast({
                   className="size-11 rounded-md border border-line object-cover"
                 />
               ))}
-              {offer.tweet.video && (
+              {offer.post.video && (
                 <span
                   title="Video (uploads when you continue)"
                   className="grid size-11 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-ink-faint"
@@ -305,21 +315,24 @@ function fileToBase64(file: File): Promise<string> {
 function CrossPostCard({
   offer,
   defaultLang,
+  videoName,
   autoPost,
   onClose,
 }: {
   offer: Offer;
   defaultLang: string;
+  /** Filename for the captured video handed to the composer or uploader. */
+  videoName: string;
   /** Confirmed from the preview toast: publish as soon as media is ready. */
   autoPost?: boolean;
   onClose: () => void;
 }) {
   const [rootId] = useState(() => crypto.randomUUID());
   const [segments, setSegments] = useState<CardSegment[]>(() => [
-    { id: rootId, text: offer.tweet.text, images: [] },
+    { id: rootId, text: offer.post.text, images: [] },
   ]);
   const [activeId, setActiveId] = useState<string>(rootId);
-  const [imagesLoading, setImagesLoading] = useState(offer.tweet.images.length > 0);
+  const [imagesLoading, setImagesLoading] = useState(offer.post.images.length > 0);
   const [phase, setPhase] = useState<Phase>('edit');
   const [error, setError] = useState('');
   const [doneUrl, setDoneUrl] = useState<string | undefined>(undefined);
@@ -414,9 +427,9 @@ function CrossPostCard({
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      if (offer.tweet.images.length > 0) {
+      if (offer.post.images.length > 0) {
         const prepared: PreparedImage[] = [];
-        for (const blob of offer.tweet.images) {
+        for (const blob of offer.post.images) {
           try {
             prepared.push(await prepareImage(blob));
           } catch {
@@ -434,10 +447,10 @@ function CrossPostCard({
       }
       // Auto-attach a captured video only when no photos claim the root. The
       // upload decides for itself whether this account may post it.
-      if (mounted && offer.tweet.video && offer.tweet.images.length === 0) {
+      if (mounted && offer.post.video && offer.post.images.length === 0) {
         await attachVideoFile(
-          new File([offer.tweet.video], 'x-video', {
-            type: offer.tweet.video.type || 'video/mp4',
+          new File([offer.post.video], videoName, {
+            type: offer.post.video.type || 'video/mp4',
           }),
           rootId,
         );
@@ -549,7 +562,7 @@ function CrossPostCard({
   }
 
   function swapToVideo() {
-    if (!offer.tweet.video) return;
+    if (!offer.post.video) return;
     setSegments((prev) =>
       prev.map((seg) => {
         if (seg.id !== rootId) return seg;
@@ -558,7 +571,7 @@ function CrossPostCard({
       }),
     );
     void attachVideoFile(
-      new File([offer.tweet.video], 'x-video', { type: offer.tweet.video.type || 'video/mp4' }),
+      new File([offer.post.video], videoName, { type: offer.post.video.type || 'video/mp4' }),
       rootId,
     );
   }
@@ -566,7 +579,7 @@ function CrossPostCard({
   async function swapToPhotos() {
     removeVideo();
     const prepared: PreparedImage[] = [];
-    for (const blob of offer.tweet.images) {
+    for (const blob of offer.post.images) {
       try {
         prepared.push(await prepareImage(blob));
       } catch {
@@ -617,8 +630,8 @@ function CrossPostCard({
   // Swap chips only make sense on the root when the captured tweet had both.
   const rootHasVideo = hasVideo && videoSegmentId === rootId;
   const showUseVideo =
-    Boolean(offer.tweet.video) && !hasVideo && root.images.length > 0;
-  const showUsePhotos = rootHasVideo && offer.tweet.images.length > 0;
+    Boolean(offer.post.video) && !hasVideo && root.images.length > 0;
+  const showUsePhotos = rootHasVideo && offer.post.images.length > 0;
 
   function splitCardIntoThread() {
     const parts = splitIntoThread(root.text);
@@ -799,7 +812,7 @@ function CrossPostCard({
 
                 {isRoot && imagesLoading && (
                   <div className="mt-2 flex gap-1.5">
-                    {offer.tweet.images.map((_, i) => (
+                    {offer.post.images.map((_, i) => (
                       <div key={i} className="shimmer size-20 rounded-lg" />
                     ))}
                   </div>
@@ -916,7 +929,7 @@ function CrossPostCard({
           </button>
         )}
 
-        {offer.tweet.unportableVideo && (
+        {offer.post.unportableVideo && (
           <p className="mt-2 ml-[50px] flex items-center gap-1.5 text-[11px] leading-snug text-ink-faint">
             <VideoIcon size={12} className="shrink-0" /> The captured video/GIF can’t be carried
             over; add one below.

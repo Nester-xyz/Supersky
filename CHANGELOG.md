@@ -7,6 +7,14 @@ file; see the commit history for those.
 
 ### Added
 
+- **Cross-post from Threads.** The cross-post suggester now works on Threads
+  too, not just X: publish a main post on threads.com and the same corner card
+  offers to share it on Bluesky, expanding into the lite composer with the
+  text and photos carried over. Threads and X share one setting and one card;
+  the toggle is now "Suggest cross-posting to Bluesky." Like the X flow, it
+  only reads a post at the moment you publish it, never browses your feed, and
+  skips replies, quotes, and threads.
+
 - **Notifications in the popup.** A bell in the header, wearing the same unread
   count as the toolbar badge, flips the composer into a full notifications
   inbox: likes, reposts, replies, mentions, quotes, and follows, split into
